@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AWS SAM Template for User Management API
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs18.x
+    MemorySize: 128
+    Environment:
+      Variables:
+        DB_HOST: mysql
+        DB_USER: root
+        DB_PASSWORD: password
+        DB_NAME: userdb
+        REDIS_HOST: redis
+        REDIS_PORT: 6379
+        REDIS_PASSWORD: ""
+
+Resources:
+  UserApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+
+  GetUserFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs18.x-v1
+    Properties:
+      CodeUri: ./
+      Handler: lambda/getUser.handler
+      Events:
+        GetUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref UserApi
+            Path: /users/{userId}
+            Method: GET
+
+  CreateUserFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs18.x-v1
+    Properties:
+      CodeUri: ./
+      Handler: lambda/createUser.handler
+      Events:
+        CreateUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref UserApi
+            Path: /users
+            Method: POST
+
+Outputs:
+  UserApi:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${UserApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
+  GetUserFunction:
+    Description: Get User Lambda Function ARN
+    Value: !GetAtt GetUserFunction.Arn
+  CreateUserFunction:
+    Description: Create User Lambda Function ARN
+    Value: !GetAtt CreateUserFunction.Arn 
