@@ -1,0 +1,8 @@
+{
+  "body": "{\"userId\":\"user123\",\"matchingId\":\"match456\",\"hand\":\"グー\",\"matchType\":\"random\"}",
+  "httpMethod": "POST",
+  "path": "/hand",
+  "headers": {
+    "Content-Type": "application/json"
+  }
+} 

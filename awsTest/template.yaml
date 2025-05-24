@@ -1,24 +1,50 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: AWS SAM Template for User Management API
+Description: AWS SAM Template for Janken Game API
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for Lambda functions
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: First private subnet for Lambda functions
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second private subnet for Lambda functions
+  LambdaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for Lambda functions
 
 Globals:
   Function:
     Timeout: 30
-    Runtime: nodejs18.x
+    Runtime: nodejs20.x
     MemorySize: 128
+    VpcConfig:
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroupId
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
     Environment:
       Variables:
-        DB_HOST: mysql
-        DB_USER: root
-        DB_PASSWORD: password
-        DB_NAME: userdb
-        REDIS_HOST: redis
-        REDIS_PORT: 6379
-        REDIS_PASSWORD: ""
+        # 本番環境の場合はParameter Storeから取得
+        DB_HOST: !If [IsLocal, "mysql", "{{resolve:ssm:/janken/db/host}}"]
+        DB_USER: !If [IsLocal, "lambda_user", "{{resolve:ssm:/janken/db/user}}"]
+        DB_PASSWORD: !If [IsLocal, "lambda_password", "{{resolve:ssm:/janken/db/password}}"]
+        DB_NAME: !If [IsLocal, "userdb", "{{resolve:ssm:/janken/db/name}}"]
+        REDIS_HOST: !If [IsLocal, "redis", "{{resolve:ssm:/janken/redis/host}}"]
+        REDIS_PORT: !If [IsLocal, "6379", "{{resolve:ssm:/janken/redis/port}}"]
+        REDIS_PASSWORD: !If [IsLocal, "", "{{resolve:ssm:/janken/redis/password}}"]
+
+Conditions:
+  IsLocal: !Equals 
+    - !Ref AWS::Region
+    - local
 
 Resources:
-  UserApi:
+  JankenApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: dev
@@ -27,47 +53,67 @@ Resources:
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
         AllowOrigin: "'*'"
 
-  GetUserFunction:
+  HandFunction:
     Type: AWS::Serverless::Function
     Metadata:
       DockerContext: .
       Dockerfile: Dockerfile
-      DockerTag: nodejs18.x-v1
+      DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./
-      Handler: lambda/getUser.handler
+      CodeUri: ./lambda/hand
+      Handler: index.handler
       Events:
-        GetUser:
+        SubmitHand:
           Type: Api
           Properties:
-            RestApiId: !Ref UserApi
-            Path: /users/{userId}
-            Method: GET
+            RestApiId: !Ref JankenApi
+            Path: /hand
+            Method: POST
 
-  CreateUserFunction:
+  JudgeFunction:
     Type: AWS::Serverless::Function
     Metadata:
       DockerContext: .
       Dockerfile: Dockerfile
-      DockerTag: nodejs18.x-v1
+      DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./
-      Handler: lambda/createUser.handler
+      CodeUri: ./lambda/judge
+      Handler: index.handler
       Events:
-        CreateUser:
+        JudgeMatch:
           Type: Api
           Properties:
-            RestApiId: !Ref UserApi
-            Path: /users
+            RestApiId: !Ref JankenApi
+            Path: /judge
+            Method: POST
+
+  TestFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: ./lambda/test
+      Handler: index.handler
+      Events:
+        GetUserInfo:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /test/user
             Method: POST
 
 Outputs:
-  UserApi:
+  JankenApi:
     Description: API Gateway endpoint URL
-    Value: !Sub "https://${UserApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
-  GetUserFunction:
-    Description: Get User Lambda Function ARN
-    Value: !GetAtt GetUserFunction.Arn
-  CreateUserFunction:
-    Description: Create User Lambda Function ARN
-    Value: !GetAtt CreateUserFunction.Arn 
+    Value: !Sub "https://${JankenApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
+  HandFunction:
+    Description: Hand Submission Lambda Function ARN
+    Value: !GetAtt HandFunction.Arn
+  JudgeFunction:
+    Description: Judge Match Lambda Function ARN
+    Value: !GetAtt JudgeFunction.Arn
+  TestFunction:
+    Description: Test Lambda Function ARN
+    Value: !GetAtt TestFunction.Arn 

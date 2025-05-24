@@ -1,0 +1,8 @@
+{
+  "body": "{\"matchingId\":\"match456\"}",
+  "httpMethod": "POST",
+  "path": "/judge",
+  "headers": {
+    "Content-Type": "application/json"
+  }
+} 

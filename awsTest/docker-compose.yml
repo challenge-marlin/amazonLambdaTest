@@ -3,23 +3,65 @@ version: '3.8'
 services:
   mysql:
     image: mysql:8.0
+    container_name: awstest-mysql
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: userdb
+      MYSQL_USER: lambda_user
+      MYSQL_PASSWORD: lambda_password
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ../doc/sql/create_tables.sql:/docker-entrypoint-initdb.d/01-create-tables.sql
+      - ../doc/sql/seed_base.sql:/docker-entrypoint-initdb.d/02-seed-base.sql
+      - ../doc/sql:/sql
     command: --default-authentication-plugin=mysql_native_password
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:6.2
+    container_name: awstest-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  lambda-local:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: awstest-lambda
+    volumes:
+      - .:/var/task
+      - /var/task/node_modules
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - DB_HOST=mysql
+      - DB_USER=lambda_user
+      - DB_PASSWORD=lambda_password
+      - DB_NAME=userdb
+      - AWS_SAM_LOCAL=true
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - app-network
 

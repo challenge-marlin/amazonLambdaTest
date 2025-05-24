@@ -1,0 +1,8 @@
+{
+  "body": "{\"userId\":\"user123\"}",
+  "httpMethod": "POST",
+  "path": "/test/user",
+  "headers": {
+    "Content-Type": "application/json"
+  }
+} 

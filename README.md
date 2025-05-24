@@ -1,174 +1,196 @@
-# AWS SAM User Management API
+# じゃんけんゲーム バックエンドAPI
 
-このプロジェクトは、AWS SAMを使用したユーザー管理APIの実装です。
+このプロジェクトは、AWS SAMを使用したサーバーレスアプリケーションです。じゃんけんゲームのバックエンドAPIを提供し、ユーザー管理、対戦管理、ランキング機能などを実装しています。
 
-## 前提条件
+## システム構成
 
-- Docker Desktop
-- AWS CLI
-- AWS SAM CLI
+### アーキテクチャ概要
+
+本システムは以下のAWSサービスを使用したサーバーレスアーキテクチャを採用しています：
+
+- AWS Lambda: アプリケーションロジックの実行
+- Amazon API Gateway: RESTful APIエンドポイントの提供
+- Amazon RDS (MySQL): ユーザーデータの永続化
+- Amazon ElastiCache (Redis): セッション管理とキャッシュ
+- Amazon VPC: ネットワークの分離と制御
+- AWS SAM: インフラストラクチャのコード化とデプロイ
+
+### システム要件
+
 - Node.js 18.x
+- MySQL 8.0
+- Redis 6.x
 
-## セットアップ手順
+### インフラストラクチャ構成
 
-### 1. AWS SAM CLIのインストール
-
-Windowsの場合：
-```bash
-# Chocolateyを使用する場合
-choco install aws-sam-cli
-
-# または、インストーラーを使用する場合
-# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install-windows.html
 ```
-インストールを確認
-```bash
-sam --version
+VPC
+├── パブリックサブネット (2AZ)
+│   └── NAT Gateway
+└── プライベートサブネット (2AZ)
+    ├── Lambda Functions
+    ├── RDS (MySQL)
+    └── ElastiCache (Redis)
 ```
-
-### 2. プロジェクトのセットアップ
-
-1. プロジェクトディレクトリに移動：
-```bash
-cd awsTest
-```
-
-2. 依存関係をインストール：
-```bash
-npm install
-```
-
-3. ローカル開発環境を起動：
-```bash
-docker-compose up -d
-```
-
-4. データベースの初期化：
-```bash
-# MySQLコンテナに接続
-docker exec -it awstest-mysql-1 mysql -uroot -ppassword
-
-# データベースに接続
-use userdb;
-
-# テーブルを作成
-CREATE TABLE users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-5. SAMアプリケーションをローカルで実行：
-```bash
-# Dockerネットワークを指定してSAMアプリケーションを起動
-sam local start-api --docker-network awstest_default
-```
-
-注意: `--docker-network` パラメータには、`docker-compose.yml`で定義されたネットワーク名を指定します。
-デフォルトでは、プロジェクト名（この場合は`awstest`）に`_default`を付けた名前になります。
 
 ## プロジェクト構造
 
 ```
-awsTest/
-├── template.yaml              ← SAM構成
-├── lambda/                    ← Lambda関数群
-│   ├── getUser.js
-│   └── createUser.js
-├── models/                    ← Model層
-│   ├── userModel.js
-│   └── sessionModel.js
-├── utils/                     ← 共通ユーティリティ
-│   ├── db.js
-│   └── redisClient.js
-├── events/                    ← テストイベントJSON
-├── docker-compose.yml         ← ローカル開発用
-└── README.md
+.
+├── awsTest/                   # SAMアプリケーション
+├── doc/                      # プロジェクトドキュメント
+│   ├── DB仕様書.md
+│   ├── sql/                 # データベース関連SQL
+│   │   ├── create_tables.sql    # テーブル定義
+│   │   ├── seed_base.sql       # 基本サンプルデータ
+│   │   ├── seed_users.sql      # ユーザーデータ
+│   │   ├── seed_user_stats.sql # ユーザー統計データ
+│   │   ├── seed_match_history.sql # 対戦履歴データ
+│   │   └── seed_daily_ranking.sql # ランキングデータ
+│   └── deploy.md           # デプロイ手順詳細
+├── infra/                    # インフラ構成コード
+│   └── terraform/           # Terraform設定（予定）
+└── README.md                # 本ファイル
 ```
 
-## テストイベント
+## データベースのセットアップ
 
-`events/` ディレクトリに以下のテストイベントを作成します：
-
-1. `events/get-user-event.json`:
-```json
-{
-  "pathParameters": {
-    "userId": "1"
-  }
-}
-```
-
-2. `events/create-user-event.json`:
-```json
-{
-  "body": "{\"name\":\"テストユーザー\",\"email\":\"test@example.com\"}"
-}
-```
-
-## APIエンドポイント
-
-- GET /users/{userId} - ユーザー情報の取得
-- POST /users - 新規ユーザーの作成
-
-## 環境変数
-
-以下の環境変数は`template.yaml`の`Globals.Function.Environment.Variables`セクションで設定されています：
-
-```yaml
-Environment:
-  Variables:
-    DB_HOST: localhost
-    DB_USER: root
-    DB_PASSWORD: password
-    DB_NAME: userdb
-    REDIS_HOST: localhost
-    REDIS_PORT: 6379
-    REDIS_PASSWORD: ""
-```
-
-これらの値は、ローカル開発環境用に設定されています。本番環境にデプロイする場合は、適切な値に変更してください。
-
-環境変数を変更する場合は、`template.yaml`を編集した後、以下のコマンドでSAMアプリケーションを再起動してください：
+### テーブル作成
 
 ```bash
-sam local start-api
+# MySQLに接続
+mysql -h <HOST> -u <USER> -p<PASSWORD> <DATABASE>
+
+# テーブル作成
+source doc/sql/create_tables.sql
 ```
 
-## テスト
+### テストデータの投入
 
-テストイベントを使用してローカルでテストを実行：
+テストデータは以下の順序で投入してください：
+
+1. 基本データ
+```bash
+source doc/sql/seed_base.sql
+```
+
+2. ユーザーデータ
+```bash
+source doc/sql/seed_users.sql
+```
+
+3. ユーザー統計データ
+```bash
+source doc/sql/seed_user_stats.sql
+```
+
+4. 対戦履歴データ
+```bash
+source doc/sql/seed_match_history.sql
+```
+
+5. ランキングデータ
+```bash
+source doc/sql/seed_daily_ranking.sql
+```
+
+各SQLファイルの役割：
+- `create_tables.sql`: データベースのテーブル定義
+- `seed_base.sql`: 基本的なサンプルデータ（管理者、テストユーザーなど）
+- `seed_users.sql`: 本番を想定したユーザーデータ
+- `seed_user_stats.sql`: ユーザーの戦績や統計情報
+- `seed_match_history.sql`: じゃんけん対戦の履歴データ
+- `seed_daily_ranking.sql`: デイリーランキングデータ
+
+## 開発環境のセットアップ
+
+1. 必要なツールのインストール
+```bash
+# AWS CLI
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# AWS SAM CLI
+pip install aws-sam-cli
+
+# Node.js 18.x
+# Windowsの場合は公式サイトからインストーラーをダウンロード
+```
+
+2. AWS認証情報の設定
+```bash
+aws configure
+# AWS Access Key ID
+# AWS Secret Access Key
+# Default region name (例: ap-northeast-1)
+# Default output format (json)
+```
+
+3. SAMアプリケーションの開発
+```bash
+cd awsTest
+# 詳細は awsTest/README.md を参照
+```
+
+## デプロイ
+
+デプロイの詳細な手順については [doc/deploy.md](doc/deploy.md) を参照してください。
+
+### クイックデプロイ
 
 ```bash
-# ユーザー取得のテスト
-sam local invoke GetUserFunction -e events/get-user-event.json
+# ビルド
+sam build
 
-# ユーザー作成のテスト
-sam local invoke CreateUserFunction -e events/create-user-event.json
+# デプロイ（初回）
+sam deploy --guided
+
+# 2回目以降のデプロイ
+sam deploy
 ```
-APIエンドポイントは以下のURLでアクセスできます：
-GET http://localhost:3000/users/{userId}
-POST http://localhost:3000/users
 
+## 環境構築の注意点
 
-## トラブルシューティング
+1. VPCエンドポイントの設定
+   - S3
+   - DynamoDB
+   - ECR
+   - CloudWatch Logs
 
-1. Dockerコンテナが起動しない場合：
-   - Docker Desktopが起動していることを確認
-   - ポートの競合がないことを確認
+2. セキュリティグループの設定
+   - Lambda → RDS (3306)
+   - Lambda → ElastiCache (6379)
+   - Lambda → インターネット (443)
 
-2. データベース接続エラー：
-   - 環境変数が正しく設定されていることを確認
-   - MySQLコンテナが正常に起動していることを確認
-   - データベースとテーブルが正しく作成されていることを確認
+3. IAMロールとポリシー
+   - Lambda実行ロール
+   - RDSアクセスロール
+   - CloudWatchロギングロール
 
-3. Redis接続エラー：
-   - Redisコンテナが正常に起動していることを確認
-   - ポートの競合がないことを確認
+## 運用管理
 
-4. SAM CLIのエラー：
-   - AWS SAM CLIが正しくインストールされていることを確認
-   - バージョンを確認：`sam --version`
-   - 必要に応じて再インストールを実行 
+### モニタリング
+
+- CloudWatch Metricsによる監視
+- CloudWatch Logsによるログ収集
+- X-Rayによるトレース
+
+### バックアップ
+
+- RDS自動バックアップ
+- ElastiCacheスナップショット
+- S3バージョニング
+
+### セキュリティ
+
+- SSL/TLS通信の強制
+- セキュリティグループの最小権限設定
+- IAMロールの最小権限設定
+- 機密情報のParameter Store管理
+
+## 開発ガイドライン
+
+- [awsTest/README.md](awsTest/README.md) - SAMアプリケーション開発ガイド
+- [doc/DB仕様書.md](doc/DB仕様書.md) - データベース設計書
+- [doc/deploy.md](doc/deploy.md) - デプロイ手順書 
