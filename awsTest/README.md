@@ -135,10 +135,11 @@ docker-compose ps
 # 注: create_tables.sqlとseed_base.sqlは自動的に実行されます
 
 # 追加のサンプルデータ（必要に応じて）
-docker-compose exec mysql mysql -u lambda_user -plambda_password userdb -e "source /sql/seed_users.sql"
-docker-compose exec mysql mysql -u lambda_user -plambda_password userdb -e "source /sql/seed_user_stats.sql"
-docker-compose exec mysql mysql -u lambda_user -plambda_password userdb -e "source /sql/seed_match_history.sql"
-docker-compose exec mysql mysql -u lambda_user -plambda_password userdb -e "source /sql/seed_daily_ranking.sql"
+docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "source /sql/seed_users.sql"
+docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "source /sql/seed_user_stats.sql"
+docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "source /sql/seed_match_history.sql"
+docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "source /sql/seed_daily_ranking.sql"
+
 
 # クリーンアップ（SQLファイルの削除）
 docker-compose exec mysql rm /create_tables.sql /seed_base.sql /seed_users.sql /seed_user_stats.sql /seed_match_history.sql /seed_daily_ranking.sql
@@ -149,12 +150,17 @@ docker-compose exec mysql rm /create_tables.sql /seed_base.sql /seed_users.sql /
 
 ```bash
 # SAMアプリケーションの起動（バックグラウンドのDockerネットワークを使用）
-sam local start-api --docker-network awstest-network --warm-containers EAGER
+cd awsTest
+sam local start-api --docker-network awstest-network --env-vars env.json --warm-containers EAGER
+
 
 # または、個別の関数をテスト
-sam local invoke HandFunction --event events/hand-event.json --docker-network awstest-network
-sam local invoke JudgeFunction --event events/judge-event.json --docker-network awstest-network
-sam local invoke TestFunction --event events/test-event.json --docker-network awstest-network
+GET http://localhost:3000/users/user001
+POST http://localhost:3000/hand
+POST http://localhost:3000/judge
+POST http://localhost:3000/login
+POST http://localhost:3000/test/user
+
 ```
 
 ### 4. テストの実行

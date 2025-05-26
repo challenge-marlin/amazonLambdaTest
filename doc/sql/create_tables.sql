@@ -1,6 +1,6 @@
 -- データベース作成
-CREATE DATABASE IF NOT EXISTS userdb;
-USE userdb;
+CREATE DATABASE IF NOT EXISTS jankendb;
+USE jankendb;
 
 -- admin_logs（管理者オペレーションログ）
 CREATE TABLE IF NOT EXISTS admin_logs (
@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS match_history (
     fight_no BIGINT AUTO_INCREMENT PRIMARY KEY,
     player1_id VARCHAR(36) NOT NULL,
     player2_id VARCHAR(36) NOT NULL,
+    player1_nickname VARCHAR(50),
+    player2_nickname VARCHAR(50),
     player1_hand ENUM('rock','paper','scissors') NOT NULL,
     player2_hand ENUM('rock','paper','scissors') NOT NULL,
     player1_result ENUM('win','lose','draw') NOT NULL,

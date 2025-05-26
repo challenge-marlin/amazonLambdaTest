@@ -21,17 +21,10 @@ const dbConfig = {
 
 exports.handler = async (event) => {
   try {
-    // Parse request body
-    const body = JSON.parse(event.body);
-    const userId = body.userId;
-
-    if (!userId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: 'userId is required'
-        })
-      };
+    // Get userId from path parameters (for GET) or default to user001
+    let userId = 'user001';
+    if (event.pathParameters && event.pathParameters.userId) {
+      userId = event.pathParameters.userId;
     }
 
     // Check Redis connection
@@ -39,6 +32,7 @@ exports.handler = async (event) => {
     try {
       await redis.ping();
       redisStatus = 'available';
+      console.log('Redis Client Connected');
     } catch (error) {
       console.error('Redis connection error:', error);
     }
@@ -46,10 +40,16 @@ exports.handler = async (event) => {
     // Connect to MySQL
     const connection = await mysql.createConnection(dbConfig);
 
-    // Get user information
+    // Get user information with user_stats
     const [userRows] = await connection.execute(
       `SELECT 
-        u.*, 
+        u.user_id,
+        u.nickname,
+        u.name,
+        u.email,
+        u.profile_image_url,
+        u.created_at,
+        u.updated_at,
         us.total_wins,
         us.current_win_streak,
         us.max_win_streak,
@@ -68,7 +68,7 @@ exports.handler = async (event) => {
         us.show_alias,
         us.user_rank
       FROM users u
-      LEFT JOIN user_stats us ON u.user_id = us.user_id
+      LEFT JOIN user_stats us ON u.management_code = us.management_code
       WHERE u.user_id = ?`,
       [userId]
     );
@@ -78,8 +78,14 @@ exports.handler = async (event) => {
     if (userRows.length === 0) {
       return {
         statusCode: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
         body: JSON.stringify({
-          message: 'User not found'
+          success: false,
+          message: `User ${userId} not found`,
+          redisStatus
         })
       };
     }
@@ -90,7 +96,12 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
       body: JSON.stringify({
+        success: true,
         redisStatus,
         userInfo
       })
@@ -100,7 +111,12 @@ exports.handler = async (event) => {
     console.error('Error:', error);
     return {
       statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
       body: JSON.stringify({
+        success: false,
         message: 'Internal server error',
         error: error.message
       })

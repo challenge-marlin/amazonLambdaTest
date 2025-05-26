@@ -33,7 +33,7 @@ Globals:
         DB_HOST: !If [IsLocal, "mysql", "{{resolve:ssm:/janken/db/host}}"]
         DB_USER: !If [IsLocal, "lambda_user", "{{resolve:ssm:/janken/db/user}}"]
         DB_PASSWORD: !If [IsLocal, "lambda_password", "{{resolve:ssm:/janken/db/password}}"]
-        DB_NAME: !If [IsLocal, "userdb", "{{resolve:ssm:/janken/db/name}}"]
+        DB_NAME: !If [IsLocal, "jankendb", "{{resolve:ssm:/janken/db/name}}"]
         REDIS_HOST: !If [IsLocal, "redis", "{{resolve:ssm:/janken/redis/host}}"]
         REDIS_PORT: !If [IsLocal, "6379", "{{resolve:ssm:/janken/redis/port}}"]
         REDIS_PASSWORD: !If [IsLocal, "", "{{resolve:ssm:/janken/redis/password}}"]
@@ -87,6 +87,23 @@ Resources:
             Path: /judge
             Method: POST
 
+  LoginFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: ./lambda/login
+      Handler: index.handler
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /login
+            Method: POST
+
   TestFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -103,6 +120,12 @@ Resources:
             RestApiId: !Ref JankenApi
             Path: /test/user
             Method: POST
+        GetUserById:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /users/{userId}
+            Method: GET
 
 Outputs:
   JankenApi:
@@ -114,6 +137,9 @@ Outputs:
   JudgeFunction:
     Description: Judge Match Lambda Function ARN
     Value: !GetAtt JudgeFunction.Arn
+  LoginFunction:
+    Description: Login Lambda Function ARN
+    Value: !GetAtt LoginFunction.Arn
   TestFunction:
     Description: Test Lambda Function ARN
     Value: !GetAtt TestFunction.Arn 

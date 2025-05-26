@@ -6,7 +6,7 @@ services:
     container_name: awstest-mysql
     environment:
       MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: userdb
+      MYSQL_DATABASE: jankendb
       MYSQL_USER: lambda_user
       MYSQL_PASSWORD: lambda_password
     ports:
@@ -14,7 +14,6 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ../doc/sql/create_tables.sql:/docker-entrypoint-initdb.d/01-create-tables.sql
-      - ../doc/sql/seed_base.sql:/docker-entrypoint-initdb.d/02-seed-base.sql
       - ../doc/sql:/sql
     command: --default-authentication-plugin=mysql_native_password
     networks:
@@ -55,7 +54,7 @@ services:
       - DB_HOST=mysql
       - DB_USER=lambda_user
       - DB_PASSWORD=lambda_password
-      - DB_NAME=userdb
+      - DB_NAME=jankendb
       - AWS_SAM_LOCAL=true
     depends_on:
       mysql:
