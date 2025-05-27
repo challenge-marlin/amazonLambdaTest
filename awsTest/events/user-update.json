@@ -1,0 +1,13 @@
+{
+  "httpMethod": "PUT",
+  "path": "/api/user",
+  "queryStringParameters": {
+    "userId": "user001"
+  },
+  "pathParameters": null,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"name\": \"更新太郎\", \"nickname\": \"タロウ\", \"email\": \"updated@example.com\", \"university\": \"更新大学\"}",
+  "isBase64Encoded": false
+} 

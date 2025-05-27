@@ -1,0 +1,13 @@
+{
+  "httpMethod": "GET",
+  "path": "/api/user-stats/user001",
+  "queryStringParameters": null,
+  "pathParameters": {
+    "userId": "user001"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": null,
+  "isBase64Encoded": false
+} 

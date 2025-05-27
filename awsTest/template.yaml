@@ -127,6 +127,58 @@ Resources:
             Path: /users/{userId}
             Method: GET
 
+  UserFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: ./lambda/user
+      Handler: index.handler
+      Events:
+        GetUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/user
+            Method: GET
+        UpdateUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/user
+            Method: PUT
+        UploadProfileImage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/user/profile-image
+            Method: POST
+
+  UserStatsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: ./lambda/user-stats
+      Handler: index.handler
+      Events:
+        GetUserStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/user-stats/{userId}
+            Method: GET
+        UpdateUserStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/user-stats/{userId}
+            Method: PUT
+
 Outputs:
   JankenApi:
     Description: API Gateway endpoint URL
@@ -142,4 +194,10 @@ Outputs:
     Value: !GetAtt LoginFunction.Arn
   TestFunction:
     Description: Test Lambda Function ARN
-    Value: !GetAtt TestFunction.Arn 
+    Value: !GetAtt TestFunction.Arn
+  UserFunction:
+    Description: User API Lambda Function ARN
+    Value: !GetAtt UserFunction.Arn
+  UserStatsFunction:
+    Description: User Stats API Lambda Function ARN
+    Value: !GetAtt UserStatsFunction.Arn 

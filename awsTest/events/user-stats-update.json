@@ -1,0 +1,13 @@
+{
+  "httpMethod": "PUT",
+  "path": "/api/user-stats/user001",
+  "queryStringParameters": null,
+  "pathParameters": {
+    "userId": "user001"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"title\": \"上級者\", \"alias\": \"じゃんけんマスター\"}",
+  "isBase64Encoded": false
+} 
