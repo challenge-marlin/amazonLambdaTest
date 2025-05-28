@@ -54,22 +54,23 @@ const getUserProfile = async (userId) => {
   try {
     const [userRows] = await connection.execute(
       `SELECT 
-        user_id as userId,
-        nickname,
-        name,
-        email,
-        profile_image_url as profileImageUrl,
-        title,
-        alias,
-        university,
-        postal_code as postalCode,
-        address,
-        phone_number as phoneNumber,
-        is_student_id_editable as isStudentIdEditable,
-        created_at as createdAt,
-        updated_at as updatedAt
-      FROM users 
-      WHERE user_id = ?`,
+        u.user_id as userId,
+        u.nickname,
+        u.name,
+        u.email,
+        u.profile_image_url as profileImageUrl,
+        us.title,
+        us.alias,
+        u.university,
+        u.postal_code as postalCode,
+        u.address,
+        u.phone_number as phoneNumber,
+        u.is_student_id_editable as isStudentIdEditable,
+        u.created_at as createdAt,
+        u.updated_at as updatedAt
+      FROM users u
+      LEFT JOIN user_stats us ON u.management_code = us.management_code
+      WHERE u.user_id = ?`,
       [userId]
     );
 
@@ -139,21 +140,22 @@ const updateUserProfile = async (userId, updateData) => {
     // 更新後のユーザー情報を取得
     const [updatedUser] = await connection.execute(
       `SELECT 
-        user_id as userId,
-        nickname,
-        name,
-        email,
-        profile_image_url as profileImageUrl,
-        title,
-        alias,
-        university,
-        postal_code as postalCode,
-        address,
-        phone_number as phoneNumber,
-        is_student_id_editable as isStudentIdEditable,
-        updated_at as updatedAt
-      FROM users 
-      WHERE user_id = ?`,
+        u.user_id as userId,
+        u.nickname,
+        u.name,
+        u.email,
+        u.profile_image_url as profileImageUrl,
+        us.title,
+        us.alias,
+        u.university,
+        u.postal_code as postalCode,
+        u.address,
+        u.phone_number as phoneNumber,
+        u.is_student_id_editable as isStudentIdEditable,
+        u.updated_at as updatedAt
+      FROM users u
+      LEFT JOIN user_stats us ON u.management_code = us.management_code
+      WHERE u.user_id = ?`,
       [userId]
     );
 

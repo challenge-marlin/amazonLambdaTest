@@ -23,6 +23,20 @@
 - Database: MySQL
 - 開発環境: Docker + docker-compose
 
+## 設定可能なパラメータ
+
+### 環境変数（env.json）
+
+- `MAX_DRAW_COUNT`: 最大引き分け回数（デフォルト: 3）
+  - 引き分けが連続でこの回数に達した場合、ゲーム終了となります
+- `REDIS_HOST`: Redisサーバーのホスト名
+- `REDIS_PORT`: Redisサーバーのポート番号
+- `REDIS_PASSWORD`: Redisサーバーのパスワード
+- `DB_HOST`: MySQLサーバーのホスト名
+- `DB_USER`: MySQLのユーザー名
+- `DB_PASSWORD`: MySQLのパスワード
+- `DB_NAME`: データベース名
+
 ## API エンドポイント
 
 ### 手の送信 API
@@ -35,17 +49,37 @@
     "matchType": "random"
   }
   ```
-  - レスポンス
+  - レスポンス（相手待ち）
     ```json
     {
       "success": true,
       "message": "手を送信しました",
       "status": "waiting",
+      "statusMessage": "相手の手を待っています",
+      "canJudge": false,
       "matchData": {
         "matchingId": "match456",
         "player1_id": "user123",
-        "player2_id": null,
-        "yourHand": "グー"
+        "player2_id": "user456",
+        "yourHand": "グー",
+        "roundNumber": 1
+      }
+    }
+    ```
+  - レスポンス（両者の手が揃った）
+    ```json
+    {
+      "success": true,
+      "message": "手を送信しました",
+      "status": "ready",
+      "statusMessage": "両プレイヤーの手が揃いました。判定可能です。",
+      "canJudge": true,
+      "matchData": {
+        "matchingId": "match456",
+        "player1_id": "user123",
+        "player2_id": "user456",
+        "yourHand": "グー",
+        "roundNumber": 1
       }
     }
     ```
@@ -57,36 +91,106 @@
     "matchingId": "match456"
   }
   ```
-  - レスポンス
+  - レスポンス（勝敗決定時）
     ```json
     {
       "success": true,
       "result": {
+        "player1_hand": "グー",
+        "player2_hand": "チョキ",
         "player1_result": "win",
         "player2_result": "lose",
+        "winner": 1,
         "is_draw": false,
         "draw_count": 0,
-        "is_finished": true
+        "judged": true,
+        "judged_at": "2025-05-27T07:40:55.906Z",
+        "is_finished": true,
+        "finish_reason": null
+      }
+    }
+    ```
+  - レスポンス（引き分け時）
+    ```json
+    {
+      "success": true,
+      "result": {
+        "player1_hand": "グー",
+        "player2_hand": "グー",
+        "player1_result": "draw",
+        "player2_result": "draw",
+        "winner": 3,
+        "is_draw": true,
+        "draw_count": 1,
+        "judged": true,
+        "judged_at": "2025-05-27T07:40:55.906Z",
+        "is_finished": false,
+        "finish_reason": null
+      }
+    }
+    ```
+  - レスポンス（最大引き分け回数到達時）
+    ```json
+    {
+      "success": true,
+      "result": {
+        "player1_hand": "グー",
+        "player2_hand": "グー",
+        "player1_result": "draw",
+        "player2_result": "draw",
+        "winner": 3,
+        "is_draw": true,
+        "draw_count": 3,
+        "judged": true,
+        "judged_at": "2025-05-27T07:40:55.906Z",
+        "is_finished": true,
+        "finish_reason": "max_draw_reached"
       }
     }
     ```
 
-### ユーザー情報取得 API
-- POST /test/user
+### ログイン API
+- POST /login
   ```json
   {
-    "userId": "user123"
+    "userId": "user001",
+    "password": "password001"
   }
   ```
+  - レスポンス（成功時）
+    ```json
+    {
+      "success": true,
+      "user": {
+        "user_id": "user001",
+        "nickname": "やまだ",
+        "title": "title_001",
+        "alias": "skill",
+        "profile_image_url": "https://lesson01.myou-kou.com/avatars/defaultAvatar1.png"
+      }
+    }
+    ```
+  - レスポンス（失敗時）
+    ```json
+    {
+      "success": false,
+      "message": "ユーザーIDまたはパスワードが正しくありません"
+    }
+    ```
+
+### ユーザー情報取得 API
+- GET /users/{userId}
   - レスポンス
     ```json
     {
+      "success": true,
       "redisStatus": "available",
       "userInfo": {
-        "user_id": "user123",
-        "name": "テストユーザー",
-        "total_wins": 10,
-        "current_win_streak": 2
+        "user_id": "user001",
+        "name": "山田 太郎",
+        "nickname": "やまだ",
+        "total_wins": 153,
+        "current_win_streak": 1
         // ... その他のユーザー情報
       }
     }
@@ -124,7 +228,7 @@ cd awsTest
 # 依存関係のインストール
 npm install
 
-# Dockerコンテナのビルドと起動
+# Dockerコンテナのビルドと起動（nginx含む）
 docker-compose build
 docker-compose up -d
 
@@ -140,30 +244,77 @@ docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "so
 docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "source /sql/seed_match_history.sql"
 docker-compose exec mysql mysql -u lambda_user -plambda_password jankendb -e "source /sql/seed_daily_ranking.sql"
 
-
 # クリーンアップ（SQLファイルの削除）
 docker-compose exec mysql rm /create_tables.sql /seed_base.sql /seed_users.sql /seed_user_stats.sql /seed_match_history.sql /seed_daily_ranking.sql
-
 ```
 
 ### 3. 開発サーバーの起動
 
+#### 方法1: ローカルマシンのみでアクセス
 ```bash
 # SAMアプリケーションの起動（バックグラウンドのDockerネットワークを使用）
 cd awsTest
 sam local start-api --docker-network awstest-network --env-vars env.json --warm-containers EAGER
 
-
-# または、個別の関数をテスト
-GET http://localhost:3000/users/user001
-POST http://localhost:3000/hand
-POST http://localhost:3000/judge
-POST http://localhost:3000/login
-POST http://localhost:3000/test/user
-
+# APIエンドポイント: http://localhost:3000
 ```
 
-### 4. テストの実行
+#### 方法2: ローカルネットワークの他のユーザーからもアクセス可能
+```bash
+# 1. Dockerコンテナを起動
+docker-compose up -d
+
+# 2. AWS SAM Localを起動（別のターミナルで）
+# Windows:
+start-sam-local.bat
+
+# Linux/Mac:
+./start-sam-local.sh
+
+# APIエンドポイント: 
+# - ローカル: http://localhost:8080
+# - ネットワーク内の他のPC: http://[あなたのIPアドレス]:8080
+```
+
+#### IPアドレスの確認方法
+```bash
+# Windows
+ipconfig
+
+# Linux/Mac
+ifconfig
+# または
+ip addr show
+```
+
+### 4. APIテスト
+
+```bash
+# ローカルアクセス
+GET http://localhost:8080/users/user001
+POST http://localhost:8080/hand
+POST http://localhost:8080/judge
+POST http://localhost:8080/login
+
+# ネットワーク内の他のPCから
+GET http://192.168.1.100:8080/users/user001  # 192.168.1.100は例
+POST http://192.168.1.100:8080/hand
+POST http://192.168.1.100:8080/judge
+POST http://192.168.1.100:8080/login
+```
+
+### 5. nginx設定について
+
+nginxはリバースプロキシとして以下の機能を提供します：
+
+- **外部アクセス**: ローカルネットワーク内の他のデバイスからAPIにアクセス可能
+- **CORS設定**: クロスオリジンリクエストの自動処理
+- **ヘルスチェック**: `/health`エンドポイントでサービス状態確認
+- **ロードバランシング**: 将来的な拡張に対応
+
+nginx設定ファイル（`nginx.conf`）をカスタマイズすることで、SSL終端やキャッシュ設定なども追加できます。
+
+### 6. テストの実行
 
 ```bash
 # すべてのテストを実行
@@ -175,7 +326,7 @@ cd lambda/judge && npm test
 cd lambda/test && npm test
 ```
 
-### 5. 依存関係の管理
+### 7. 依存関係の管理
 
 このプロジェクトではnpm workspacesを使用して依存関係を管理しています：
 
@@ -190,7 +341,7 @@ npm install
 npm install --production
 ```
 
-### 6. トラブルシューティング
+### 8. トラブルシューティング
 
 #### データベース接続の確認
 ```bash
@@ -251,7 +402,7 @@ sam local invoke TestFunction \
 }
 ```
 
-### 7. デプロイ
+### 9. デプロイ
 
 ```bash
 # ビルド

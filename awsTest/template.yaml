@@ -30,13 +30,20 @@ Globals:
     Environment:
       Variables:
         # 本番環境の場合はParameter Storeから取得
-        DB_HOST: !If [IsLocal, "mysql", "{{resolve:ssm:/janken/db/host}}"]
-        DB_USER: !If [IsLocal, "lambda_user", "{{resolve:ssm:/janken/db/user}}"]
-        DB_PASSWORD: !If [IsLocal, "lambda_password", "{{resolve:ssm:/janken/db/password}}"]
-        DB_NAME: !If [IsLocal, "jankendb", "{{resolve:ssm:/janken/db/name}}"]
-        REDIS_HOST: !If [IsLocal, "redis", "{{resolve:ssm:/janken/redis/host}}"]
-        REDIS_PORT: !If [IsLocal, "6379", "{{resolve:ssm:/janken/redis/port}}"]
-        REDIS_PASSWORD: !If [IsLocal, "", "{{resolve:ssm:/janken/redis/password}}"]
+        # dockerがマルチコンテナの場合それぞれのサービスのアドレスは[127.0.0.1]とは限らない、「docker network inspect [ネットワーク名]」で確認
+        #DB_HOST: !If [IsLocal, "awstest-mysql", "{{resolve:ssm:/janken/db/host}}"]
+        #DB_USER: !If [IsLocal, "lambda_user", "{{resolve:ssm:/janken/db/user}}"]
+        #DB_PASSWORD: !If [IsLocal, "lambda_password", "{{resolve:ssm:/janken/db/password}}"]
+        #DB_NAME: !If [IsLocal, "jankendb", "{{resolve:ssm:/janken/db/name}}"]
+        DB_HOST: "awstest-mysql"
+        DB_USER: "lambda_user"
+        DB_PASSWORD: "lambda_password"
+        DB_NAME: "jankendb"
+        #REDIS_HOST: !If [IsLocal, "awstest-redis", "{{resolve:ssm:/janken/redis/host}}"]
+        #REDIS_PORT: !If [IsLocal, "6379", "{{resolve:ssm:/janken/redis/port}}"]
+        #REDIS_PASSWORD: !If [IsLocal, "", "{{resolve:ssm:/janken/redis/password}}"]
+        REDIS_HOST: "awstest-redis"
+        REDIS_PORT: "6379"
 
 Conditions:
   IsLocal: !Equals 
@@ -51,6 +58,7 @@ Resources:
       Cors:
         AllowMethods: "'GET,POST,PUT,DELETE'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowHeaders: "'Content-Type,X-Amz-Date'"
         AllowOrigin: "'*'"
 
   HandFunction:
@@ -60,8 +68,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./lambda/hand
-      Handler: index.handler
+      CodeUri: .
+      Handler: lambda/hand/index.handler
       Events:
         SubmitHand:
           Type: Api
@@ -77,8 +85,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./lambda/judge
-      Handler: index.handler
+      CodeUri: .
+      Handler: lambda/judge/index.handler
       Events:
         JudgeMatch:
           Type: Api
@@ -94,8 +102,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./lambda/login
-      Handler: index.handler
+      CodeUri: .
+      Handler: lambda/login/index.handler
       Events:
         Login:
           Type: Api
@@ -111,8 +119,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./lambda/test
-      Handler: index.handler
+      CodeUri: .
+      Handler: lambda/test/index.handler
       Events:
         GetUserInfo:
           Type: Api
@@ -134,8 +142,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./lambda/user
-      Handler: index.handler
+      CodeUri: .
+      Handler: lambda/user/index.handler
       Events:
         GetUser:
           Type: Api
@@ -163,8 +171,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerTag: nodejs20.x-v1
     Properties:
-      CodeUri: ./lambda/user-stats
-      Handler: index.handler
+      CodeUri: .
+      Handler: lambda/user-stats/index.handler
       Events:
         GetUserStats:
           Type: Api
@@ -178,7 +186,22 @@ Resources:
             RestApiId: !Ref JankenApi
             Path: /api/user-stats/{userId}
             Method: PUT
-
+  RegisterFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: .
+      Handler: lambda/register/index.handler
+      Events:
+        Register:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /register
+            Method: POST
 Outputs:
   JankenApi:
     Description: API Gateway endpoint URL
@@ -201,3 +224,6 @@ Outputs:
   UserStatsFunction:
     Description: User Stats API Lambda Function ARN
     Value: !GetAtt UserStatsFunction.Arn 
+  RegisterFunction:
+    Description: Register API Lambda Function ARN
+    Value: !GetAtt RegisterFunction.Arn

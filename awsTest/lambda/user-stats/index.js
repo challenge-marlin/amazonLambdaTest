@@ -74,12 +74,12 @@ const getUserStats = async (userId) => {
         us.show_title as showTitle,
         us.show_alias as showAlias,
         us.total_wins as winCount,
-        us.total_losses as loseCount,
-        us.total_draws as drawCount,
-        (us.total_wins + us.total_losses + us.total_draws) as totalMatches,
+        us.daily_losses as loseCount,
+        us.daily_draws as drawCount,
+        (us.total_wins + us.daily_losses + us.daily_draws) as totalMatches,
         us.daily_wins as dailyWins,
         us.user_rank as dailyRank,
-        us.daily_ranking as dailyRanking,
+        0 as dailyRanking,
         us.recent_hand_results_str as recentHandResultsStr,
         us.title,
         us.available_titles as availableTitles,
@@ -96,11 +96,11 @@ const getUserStats = async (userId) => {
       await connection.execute(
         `INSERT INTO user_stats (
           management_code, user_id, show_title, show_alias,
-          total_wins, total_losses, total_draws, daily_wins,
-          user_rank, daily_ranking, recent_hand_results_str,
-          title, available_titles, alias, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [managementCode, userId, true, true, 0, 0, 0, 0, 'ブロンズ', 0, '', '初心者', '初心者', '']
+          total_wins, daily_wins, daily_losses, daily_draws,
+          user_rank, recent_hand_results_str,
+          title, available_titles, alias, last_reset_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+        [managementCode, userId, true, true, 0, 0, 0, 0, 'ブロンズ', '', '初心者', '初心者', '']
       );
 
       // 作成したステータスを再取得
@@ -110,12 +110,12 @@ const getUserStats = async (userId) => {
           us.show_title as showTitle,
           us.show_alias as showAlias,
           us.total_wins as winCount,
-          us.total_losses as loseCount,
-          us.total_draws as drawCount,
-          (us.total_wins + us.total_losses + us.total_draws) as totalMatches,
+          us.daily_losses as loseCount,
+          us.daily_draws as drawCount,
+          (us.total_wins + us.daily_losses + us.daily_draws) as totalMatches,
           us.daily_wins as dailyWins,
           us.user_rank as dailyRank,
-          us.daily_ranking as dailyRanking,
+          0 as dailyRanking,
           us.recent_hand_results_str as recentHandResultsStr,
           us.title,
           us.available_titles as availableTitles,
@@ -185,11 +185,11 @@ const updateUserStats = async (userId, updateData) => {
       await connection.execute(
         `INSERT INTO user_stats (
           management_code, user_id, show_title, show_alias,
-          total_wins, total_losses, total_draws, daily_wins,
-          user_rank, daily_ranking, recent_hand_results_str,
-          title, available_titles, alias, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [managementCode, userId, true, true, 0, 0, 0, 0, 'ブロンズ', 0, '', 
+          total_wins, daily_wins, daily_losses, daily_draws,
+          user_rank, recent_hand_results_str,
+          title, available_titles, alias, last_reset_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+        [managementCode, userId, true, true, 0, 0, 0, 0, 'ブロンズ', '', 
          updateFields.title || '初心者', '初心者', updateFields.alias || '']
       );
     } else {
@@ -198,7 +198,7 @@ const updateUserStats = async (userId, updateData) => {
       const values = [...Object.values(updateFields), managementCode];
       
       await connection.execute(
-        `UPDATE user_stats SET ${setClause}, updated_at = NOW() WHERE management_code = ?`,
+        `UPDATE user_stats SET ${setClause} WHERE management_code = ?`,
         values
       );
     }
@@ -208,8 +208,7 @@ const updateUserStats = async (userId, updateData) => {
       `SELECT 
         user_id as userId,
         title,
-        alias,
-        updated_at as updatedAt
+        alias
       FROM user_stats 
       WHERE management_code = ?`,
       [managementCode]

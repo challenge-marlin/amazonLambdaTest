@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# AWS SAM Localを起動
+echo "Starting AWS SAM Local API..."
+sam local start-api --host 0.0.0.0 --port 3000 --docker-network awstest-network 

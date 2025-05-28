@@ -1,5 +1,5 @@
-const KC = require('../../models/database/KnexConnect.js');
-const S = require('../../models/database/SelecterUser.js');
+const KC = require('../../utils/godlib_database/KnexConnect.js');
+const S = require('../../utils/godlib_database/SelecterUser.js');
 
 exports.handler = async (event, context) => {
     console.log("Event Data:", JSON.stringify(event, null, 2));
@@ -37,6 +37,7 @@ exports.handler = async (event, context) => {
 
         console.info("ユーザー認証処理開始");
 
+        console.log("DB情報:", process.env.DB_HOST, process.env.DB_PASSWORD, process.env.DB_NAME, process.env.DB_USER);
         const knexConnect = new KC.KnexConnect(process);
         const selecter = new S.Selecter_User(knexConnect);
 
