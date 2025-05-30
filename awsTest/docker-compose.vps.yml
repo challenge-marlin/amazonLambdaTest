@@ -58,12 +58,12 @@ services:
   lambda-local:
     build:
       context: .
-      dockerfile: Dockerfile.vps
+      dockerfile: Dockerfile.vps-express
     container_name: awstest-lambda
+    ports:
+      - "3000:3000"
     volumes:
-      - .:/var/task
-      - /var/task/node_modules
-      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/app
     environment:
       - REDIS_HOST=awstest-redis
       - REDIS_PORT=6379
@@ -72,8 +72,7 @@ services:
       - DB_USER=lambda_user
       - DB_PASSWORD=lambda_password
       - DB_NAME=jankendb
-      - AWS_SAM_LOCAL=true
-      - SAM_CLI_TELEMETRY=0
+      - NODE_ENV=production
     depends_on:
       mysql:
         condition: service_healthy
@@ -82,7 +81,6 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-    command: ["sam", "local", "start-api", "--host", "0.0.0.0", "--port", "3000", "--docker-network", "awstest-network"]
 
 networks:
   app-network:

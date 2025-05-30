@@ -19,7 +19,9 @@ ssh username@your-vps-ip-address
 
 # または、秘密鍵を使用する場合
 ssh -i "path/to/your/key.pem" username@your-vps-ip-address
+ssh -i "C:\Users\USER\Documents\.ssh\key-2025-05-19-13-32.pem" root@160.251.137.105
 ```
+cd /home/lambda_user/apps/awsTest/ 
 
 ## 2. 必要なソフトウェアのインストール
 
@@ -79,10 +81,30 @@ cd janken-api/awsTest
 ./start-vps.sh
 ```
 
+実行できない場合以下を試します
+# ファイルの種類と改行コードを確認
+file start-vps.sh
+
+# 改行コードを修正
+dos2unix start-vps.sh
+
+
 起動スクリプトが以下を自動実行します：
 - 環境変数の読み込み
 - Docker Composeでサービス起動（MySQL、Redis、SAM Local、nginx）
 - サービス状態の確認
+
+# 新しいVPS用Express版で起動
+docker-compose -f docker-compose.vps.yml up -d --build lambda-local
+
+# ログ確認
+docker-compose -f docker-compose.vps.yml logs lambda-local
+
+# 動作確認
+sleep 10
+curl http://localhost/health
+
+
 
 ## 5. 動作確認
 
