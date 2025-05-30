@@ -173,7 +173,150 @@ docker-compose -f docker-compose.vps.yml down
 docker-compose -f docker-compose.vps.yml up -d --build
 ```
 
-## 8. トラブルシューティング
+## 8. シードデータの投入とUTF-8エンコーディング対応
+
+### 💡 重要：日本語文字化け対策
+
+日本語のニックネームや文字データが正しく表示されるよう、シードデータ投入時には必ず文字エンコーディングを指定してください。
+
+### 8.1 データベース文字セットの確認
+
+```bash
+# MySQLコンテナにアクセス
+docker-compose -f docker-compose.vps.yml exec mysql mysql -u root -p
+
+# データベースとテーブルの文字セット確認
+SHOW CREATE DATABASE jankendb;
+SHOW CREATE TABLE users;
+SHOW CREATE TABLE user_stats;
+
+# 現在の接続文字セット確認
+SHOW VARIABLES LIKE 'character_set%';
+SHOW VARIABLES LIKE 'collation%';
+```
+
+**確認ポイント**:
+- データベース: `utf8mb4_unicode_ci`
+- テーブル: `utf8mb4_unicode_ci`
+- 接続: `utf8mb4`
+
+### 8.2 正しいシードデータ投入方法
+
+```bash
+# VPS上で実行 - 必ず文字セットを指定
+cd ~/apps/janken-api/awsTest/doc/sql
+
+# 方法1: mysqlコマンドで文字セット指定
+mysql -u root -p --default-character-set=utf8mb4 jankendb < seed_users.sql
+mysql -u root -p --default-character-set=utf8mb4 jankendb < seed_user_stats.sql  
+mysql -u root -p --default-character-set=utf8mb4 jankendb < seed_match_history.sql
+mysql -u root -p --default-character-set=utf8mb4 jankendb < seed_daily_ranking.sql
+
+# 方法2: Dockerコンテナ経由（推奨）
+# docker execで直接実行（より確実）
+docker exec -i awstest-mysql mysql -u root -ppassword --default-character-set=utf8mb4 jankendb < ../doc/sql/seed_users.sql
+docker exec -i awstest-mysql mysql -u root -ppassword --default-character-set=utf8mb4 jankendb < ../doc/sql/seed_user_stats.sql
+docker exec -i awstest-mysql mysql -u root -ppassword --default-character-set=utf8mb4 jankendb < ../doc/sql/seed_match_history.sql
+docker exec -i awstest-mysql mysql -u root -ppassword --default-character-set=utf8mb4 jankendb < ../doc/sql/seed_daily_ranking.sql
+```
+
+
+### 8.3 データの文字化け確認方法
+
+```sql
+-- MySQLにログイン後実行
+USE jankendb;
+
+-- 文字化けの確認（HEXで確認）
+SELECT user_id, nickname, HEX(nickname) AS hex_data FROM users WHERE user_id = 'user025';
+
+-- 正常な場合の「ウィスパー」のHEX値: E382A6E382A3E382B9E38391E383BC
+-- 文字化けの場合: C3A3E2809AC2A6... のような値
+
+-- 文字化けしたユーザーを検索
+SELECT user_id, nickname FROM users WHERE HEX(nickname) LIKE 'C3A3%';
+```
+
+### 8.4 既存データの文字化け修正
+
+文字化けが発生している場合の修正方法：
+
+```sql
+-- MySQLに接続して実行
+USE jankendb;
+
+-- 接続文字セットを強制設定
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+SET character_set_client = utf8mb4;
+SET character_set_connection = utf8mb4;
+SET character_set_results = utf8mb4;
+
+-- 具体的な修正例（user025の「ウィスパー」）
+UPDATE users SET nickname = 'ウィスパー' WHERE user_id = 'user025';
+UPDATE users SET nickname = 'ルミナス' WHERE user_id = 'user035';
+
+-- 修正後の確認
+SELECT user_id, nickname, HEX(nickname) FROM users WHERE user_id IN ('user025', 'user035');
+
+-- user_statsテーブルの日本語データも確認・修正
+SELECT user_id, title, alias FROM user_stats WHERE user_id = 'user025';
+UPDATE user_stats SET alias = '正しい日本語エイリアス' WHERE user_id = 'user025' AND alias LIKE '%文字化け%';
+```
+
+### 8.5 予防策：シードファイルの改良
+
+新しいシードファイルの先頭に文字セット設定を追加：
+
+```sql
+-- seed_users.sql の先頭に追加
+-- 文字セット設定を明示
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+SET character_set_client = utf8mb4;
+SET character_set_connection = utf8mb4;
+SET character_set_results = utf8mb4;
+
+-- 以下、既存のINSERT文...
+INSERT INTO users (...) VALUES (...);
+```
+
+### 8.6 API側の対応確認
+
+Lambda関数側でも適切なUTF-8設定がされていることを確認：
+
+```javascript
+// MySQL接続時の設定例（既に実装済み）
+const connection = await mysql.createConnection({
+    host: process.env.DB_HOST,
+    user: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+    database: 'jankendb',
+    charset: 'utf8mb4',
+    // 以下の設定が重要
+    connectionLimit: 10,
+    acquireTimeout: 60000,
+    timeout: 60000
+});
+
+// 接続後の文字セット強制設定
+await connection.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+await connection.execute("SET CHARACTER SET utf8mb4");
+await connection.execute("SET character_set_connection=utf8mb4");
+```
+
+### 8.7 動作確認
+
+```bash
+# API経由でのデータ確認
+curl -X POST http://localhost/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "user025", "password": "password025"}'
+
+# レスポンスで日本語が正常に表示されることを確認
+# 期待値: "nickname": "ウィスパー"
+# 問題がある場合: "nickname": "ã‚¦ã‚£ã‚¹ãƒ'ãƒ¼"
+```
+
+## 9. トラブルシューティング
 
 ### よくある問題
 
@@ -203,7 +346,36 @@ docker-compose -f docker-compose.vps.yml up -d --build
    docker-compose -f docker-compose.vps.yml exec redis redis-cli ping
    ```
 
-## 9. ローカル環境との違い
+### 文字エンコーディング関連の問題
+
+1. **日本語が文字化けする**
+   ```bash
+   # データベースの文字セット確認
+   docker-compose -f docker-compose.vps.yml exec mysql mysql -u root -p -e "SHOW VARIABLES LIKE 'character_set%';"
+   
+   # シードデータを正しい文字セットで再投入
+   mysql -u root -p --default-character-set=utf8mb4 jankendb < seed_users.sql
+   ```
+
+2. **既存データが文字化けしている**
+   ```sql
+   -- 文字化けデータの確認
+   SELECT user_id, nickname, HEX(nickname) FROM users WHERE HEX(nickname) LIKE 'C3A3%';
+   
+   -- 個別修正
+   UPDATE users SET nickname = '正しい日本語' WHERE user_id = 'ユーザーID';
+   ```
+
+3. **API レスポンスが文字化けする**
+   ```javascript
+   // レスポンスヘッダーの確認
+   headers: {
+       'Content-Type': 'application/json; charset=utf-8',
+       // ... その他のヘッダー
+   }
+   ```
+
+## 10. ローカル環境との違い
 
 **ほとんど違いはありません！** 主な違いは：
 
@@ -211,7 +383,7 @@ docker-compose -f docker-compose.vps.yml up -d --build
 2. **ポート設定**: 外部アクセス用にポート80を公開
 3. **再起動ポリシー**: `restart: unless-stopped`でサービスの自動復旧
 
-## 10. 設定ファイルの説明
+## 11. 設定ファイルの説明
 
 ### 作成済みファイル一覧
 - `docker-compose.vps.yml`: VPS用Docker Compose設定
@@ -229,7 +401,7 @@ DB_HOST=awstest-mysql
 REDIS_HOST=awstest-redis
 ```
 
-## 11. セキュリティについて
+## 12. セキュリティについて
 
 **注意**: この設定はテスト用途です。本番環境では以下を変更してください：
 

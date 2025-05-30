@@ -11,19 +11,25 @@ const redis = new Redis({
   }
 });
 
-// MySQL connection configuration
+// MySQL connection configuration（MySQL2対応版）
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
+  database: process.env.DB_NAME,
+  charset: 'utf8mb4',
+  ssl: false,
+  // MySQL2で有効なオプションのみ
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+  dateStrings: false
 };
 
 // Helper function to create response
 const createResponse = (statusCode, body) => ({
   statusCode,
   headers: {
-    'Content-Type': 'application/json',
+    'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE'
@@ -52,6 +58,11 @@ const getUserProfile = async (userId) => {
   const connection = await mysql.createConnection(dbConfig);
   
   try {
+    // UTF-8エンコーディングを明示的に設定
+    await connection.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    await connection.execute("SET CHARACTER SET utf8mb4");
+    await connection.execute("SET character_set_connection=utf8mb4");
+    
     const [userRows] = await connection.execute(
       `SELECT 
         u.user_id as userId,
@@ -95,6 +106,11 @@ const updateUserProfile = async (userId, updateData) => {
   const connection = await mysql.createConnection(dbConfig);
   
   try {
+    // UTF-8エンコーディングを明示的に設定
+    await connection.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    await connection.execute("SET CHARACTER SET utf8mb4");
+    await connection.execute("SET character_set_connection=utf8mb4");
+    
     // バリデーション
     const allowedFields = ['name', 'nickname', 'email', 'university', 'postalCode', 'address', 'phoneNumber'];
     const updateFields = {};
@@ -175,6 +191,11 @@ const uploadProfileImage = async (userId, fileData) => {
   const connection = await mysql.createConnection(dbConfig);
   
   try {
+    // UTF-8エンコーディングを明示的に設定
+    await connection.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    await connection.execute("SET CHARACTER SET utf8mb4");
+    await connection.execute("SET character_set_connection=utf8mb4");
+    
     // ファイルサイズチェック（5MB制限）
     if (fileData && fileData.length > 5 * 1024 * 1024) {
       return createResponse(400, createErrorResponse(
