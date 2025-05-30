@@ -1,0 +1,17 @@
+FROM public.ecr.aws/sam/build-nodejs20.x:latest
+
+# 作業ディレクトリの設定
+WORKDIR /var/task
+
+# Node.jsの依存関係をコピーしてインストール
+COPY package*.json ./
+RUN npm install
+
+# アプリケーションコードをコピー
+COPY . .
+
+# ポート3000を公開
+EXPOSE 3000
+
+# SAM Localを起動
+CMD ["sam", "local", "start-api", "--host", "0.0.0.0", "--port", "3000"]

@@ -1,0 +1,21 @@
+FROM node:20-slim
+
+# 作業ディレクトリの設定
+WORKDIR /app
+
+# 必要なシステムパッケージをインストール（最小限）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# package.jsonをコピーして依存関係をインストール
+COPY package*.json ./
+RUN npm install --production
+
+# アプリケーションコードをコピー
+COPY . .
+
+# ポート3000を公開
+EXPOSE 3000
+
+# VPS用APIサーバーを起動
+CMD ["npm", "run", "start:vps"] 
