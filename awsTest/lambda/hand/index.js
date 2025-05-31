@@ -4,23 +4,88 @@ const matchController = new MatchController();
 
 exports.handler = async (event) => {
     try {
-        // リクエストボディの解析
-        let body;
-        try {
-            body = JSON.parse(event.body);
-        } catch (err) {
-            const ResponseService = require('../../lib/services/ResponseService');
-            return ResponseService.validationError("Invalid JSON format");
+        const ResponseService = require('../../lib/services/ResponseService');
+        
+        // HTTPメソッドに応じて処理を分岐
+        if (event.httpMethod === 'GET') {
+            // マッチング状態確認処理
+            const { userId, matchingId } = event.queryStringParameters || {};
+            
+            if (!userId) {
+                return ResponseService.validationError("ユーザーIDは必須です");
+            }
+
+            // MatchControllerを使用してマッチング状態取得処理
+            if (matchingId) {
+                // matchingIdが指定されている場合は特定のマッチングの状態を取得
+                const result = await matchController.getMatchStatus(matchingId);
+                return result;
+            } else {
+                // userIdのみの場合は、ユーザーの現在のマッチング状態を取得
+                const result = await matchController.getUserMatchStatus(userId);
+                return result;
+            }
+            
+        } else if (event.httpMethod === 'POST') {
+            // POSTリクエストの場合は、URLパスに応じて処理を分岐
+            const path = event.path || '';
+            
+            if (path === '/match') {
+                // マッチング開始処理
+                let body;
+                try {
+                    body = JSON.parse(event.body);
+                } catch (err) {
+                    return ResponseService.validationError("Invalid JSON format");
+                }
+                
+                const { userId, matchType = "random" } = body;
+                if (!userId) {
+                    return ResponseService.validationError("ユーザーIDは必須です");
+                }
+                
+                // MatchControllerを使用してマッチング開始処理
+                const result = await matchController.startMatch(userId, matchType);
+                return result;
+                
+            } else if (path.includes('/reset_hands')) {
+                // 手のリセット処理
+                let body;
+                try {
+                    body = JSON.parse(event.body);
+                } catch (err) {
+                    return ResponseService.validationError("Invalid JSON format");
+                }
+                
+                const { matchingId } = body;
+                if (!matchingId) {
+                    return ResponseService.validationError("マッチングIDは必須です");
+                }
+                
+                // MatchControllerを使用して手のリセット処理
+                const result = await matchController.resetHands(matchingId);
+                return result;
+                
+            } else {
+                // 手の送信処理
+                let body;
+                try {
+                    body = JSON.parse(event.body);
+                } catch (err) {
+                    return ResponseService.validationError("Invalid JSON format");
+                }
+
+                // MatchControllerを使用して手の送信処理
+                const result = await matchController.submitHand(body);
+                return result;
+            }
+        } else {
+            return ResponseService.validationError("サポートされていないHTTPメソッドです");
         }
 
-        // MatchControllerを使用して手の送信処理
-        const result = await matchController.submitHand(body);
-        
-        return result;
-
     } catch (error) {
-        console.error("手の送信エラー:", error);
+        console.error("Hand API処理エラー:", error);
         const ResponseService = require('../../lib/services/ResponseService');
-        return ResponseService.error("手の送信中にエラーが発生しました");
+        return ResponseService.error("API処理中にエラーが発生しました");
     }
 }; 

@@ -14,7 +14,7 @@
 ## 共通仕様
 
 ### 基本情報
-- ベースURL: `http://localhost:3000/dev/api`（開発環境）
+- ベースURL: `http://192.168.1.180:3000`（開発環境）
 - APIバージョン: v1
 - リクエスト形式: JSON
 - レスポンス形式: JSON
@@ -85,7 +85,7 @@ Authorization: Bearer {token}
 ### エンドポイント情報
 ```
 開発環境:
-- ベースURL: http://192.168.1.180:3000/dev/api
+- ベースURL: http://192.168.1.180:3000
 
 AWS環境（予定）:
 - ベースURL: https://avwnok61nj.execute-api.ap-northeast-3.amazonaws.com/proc

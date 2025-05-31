@@ -98,6 +98,9 @@ dos2unix start-vps.sh
 docker-compose -f docker-compose.vps.yml up -d --build lambda-local
 docker-compose -f docker-compose.vps.yml up -d
 
+docker-compose -f docker-compose.vps.yml down
+docker-compose -f docker-compose.vps.yml up -d
+
 # ログ確認
 docker-compose -f docker-compose.vps.yml logs lambda-local
 

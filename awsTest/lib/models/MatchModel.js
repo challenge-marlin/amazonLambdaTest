@@ -50,6 +50,66 @@ class MatchModel extends BaseModel {
     }
 
     /**
+     * ユーザーが参加している進行中のマッチを検索
+     */
+    async findActiveMatchByUserId(userId) {
+        const redis = await this.getRedisConnection();
+        try {
+            // match:* パターンのすべてのキーを取得
+            const matchKeys = await redis.keys('match:*');
+            
+            for (const key of matchKeys) {
+                const matchData = await redis.hgetall(key);
+                
+                // マッチが終了していない場合のみチェック
+                if (matchData.game_status !== 'finished') {
+                    // プレイヤー1またはプレイヤー2として参加している場合
+                    if (matchData.player1_id === userId || matchData.player2_id === userId) {
+                        // match:プレフィックスを削除してmatchingIdを返す
+                        return key.replace('match:', '');
+                    }
+                }
+            }
+            
+            return null; // アクティブなマッチが見つからない
+        } catch (error) {
+            console.error("アクティブマッチ検索エラー:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * 待機中のマッチを検索（ランダムマッチング用）
+     */
+    async findWaitingMatch(excludeUserId) {
+        const redis = await this.getRedisConnection();
+        try {
+            // match:* パターンのすべてのキーを取得
+            const matchKeys = await redis.keys('match:*');
+            
+            for (const key of matchKeys) {
+                const matchData = await redis.hgetall(key);
+                
+                // 待機中で、プレイヤー2がいない、かつ自分以外のマッチを探す
+                if (matchData.game_status === 'waiting' && 
+                    matchData.player1_id && 
+                    !matchData.player2_id && 
+                    matchData.player1_id !== excludeUserId &&
+                    matchData.matchType === 'random') {
+                    
+                    // match:プレフィックスを削除してmatchingIdを返す
+                    return key.replace('match:', '');
+                }
+            }
+            
+            return null; // 待機中のマッチが見つからない
+        } catch (error) {
+            console.error("待機中マッチ検索エラー:", error);
+            throw error;
+        }
+    }
+
+    /**
      * マッチデータ保存
      */
     async saveMatchData(matchingId, matchData) {
