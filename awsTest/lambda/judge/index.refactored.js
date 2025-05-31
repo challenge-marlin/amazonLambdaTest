@@ -13,14 +13,15 @@ exports.handler = async (event) => {
             return ResponseService.validationError("Invalid JSON format");
         }
 
-        // MatchControllerを使用して手の送信処理
-        const result = await matchController.submitHand(body);
+        // MatchControllerを使用してマッチ判定処理
+        const result = await matchController.judgeMatch(body);
         
         return result;
 
     } catch (error) {
-        console.error("手の送信エラー:", error);
+        console.error("判定処理エラー:", error);
         const ResponseService = require('../../lib/services/ResponseService');
-        return ResponseService.error("手の送信中にエラーが発生しました");
+        return ResponseService.error("判定処理中にエラーが発生しました");
     }
 }; 
+ 

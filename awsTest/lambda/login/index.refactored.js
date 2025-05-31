@@ -11,6 +11,7 @@ exports.handler = async (event, context) => {
         try {
             body = JSON.parse(event.body);
         } catch (err) {
+            const UserController = require('../../lib/controllers/UserController');
             const ResponseService = require('../../lib/services/ResponseService');
             return ResponseService.validationError("Invalid JSON format");
         }
