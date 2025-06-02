@@ -231,20 +231,18 @@ if (registerHandler) {
 // マッチング状態確認API追加
 if (handHandler) {
     app.get('/match', (req, res) => {
-        const matchEvent = {
-            httpMethod: 'GET',
-            path: '/match',
-            queryStringParameters: req.query,
-            headers: req.headers
-        };
-        wrapLambda(handHandler, { ...req, body: null }, res);
+        console.log(`🔍 マッチング状態確認: userId=${req.query.userId}, matchingId=${req.query.matchingId}`);
+        wrapLambda(handHandler, req, res);
     });
     console.log('🎯 Match status endpoint registered');
 }
 
 // マッチング開始API追加
 if (handHandler) {
-    app.post('/match', (req, res) => wrapLambda(handHandler, req, res));
+    app.post('/match', (req, res) => {
+        console.log(`🎯 マッチング開始リクエスト: userId=${req.body.userId}, matchType=${req.body.matchType}`);
+        wrapLambda(handHandler, req, res);
+    });
     console.log('🎯 Match start endpoint registered');
 }
 
@@ -277,6 +275,88 @@ if (rankingHandler) {
     });
 }
 
+// デバッグ用エンドポイント - Redis状態確認
+app.get('/debug/redis', async (req, res) => {
+    try {
+        const Redis = require("ioredis");
+        const redis = new Redis({
+            host: process.env.REDIS_HOST || 'localhost',
+            port: process.env.REDIS_PORT || 6379,
+            password: process.env.REDIS_PASSWORD || '',
+        });
+
+        // Redis接続テスト
+        const pingResult = await redis.ping();
+        
+        // 現在のマッチ情報を取得
+        const matchKeys = await redis.keys('match:*');
+        const matchData = {};
+        
+        for (const key of matchKeys) {
+            matchData[key] = await redis.hgetall(key);
+        }
+
+        await redis.quit();
+
+        res.json({
+            success: true,
+            redis_status: 'connected',
+            ping_result: pingResult,
+            active_matches: matchData,
+            match_count: matchKeys.length
+        });
+    } catch (error) {
+        console.error('Redis デバッグエラー:', error);
+        res.status(500).json({
+            success: false,
+            redis_status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// デバッグ用エンドポイント - マッチ強制クリア
+app.post('/debug/clear-matches', async (req, res) => {
+    try {
+        const Redis = require("ioredis");
+        const redis = new Redis({
+            host: process.env.REDIS_HOST || 'localhost',
+            port: process.env.REDIS_PORT || 6379,
+            password: process.env.REDIS_PASSWORD || '',
+        });
+
+        const matchKeys = await redis.keys('match:*');
+        if (matchKeys.length > 0) {
+            await redis.del(...matchKeys);
+        }
+
+        await redis.quit();
+
+        res.json({
+            success: true,
+            message: `${matchKeys.length}個のマッチをクリアしました`,
+            cleared_matches: matchKeys
+        });
+    } catch (error) {
+        console.error('マッチクリアエラー:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+console.log('🔧 Debug endpoints registered');
+
+// 準備完了API追加
+if (handHandler) {
+    app.post('/match/ready', (req, res) => {
+        console.log(`🎯 準備完了リクエスト: userId=${req.body.userId}, matchingId=${req.body.matchingId}`);
+        wrapLambda(handHandler, req, res);
+    });
+    console.log('🎯 Match ready endpoint registered');
+}
+
 // 404ハンドラー
 app.use('*', (req, res) => {
     res.status(404).json({
@@ -303,5 +383,8 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏆 Ranking API: http://localhost:${PORT}/ranking`);
     console.log(`📝 Register API: http://localhost:${PORT}/register`);
     console.log(`✅ Check UserID API: http://localhost:${PORT}/check-userid`);
+    console.log('🔧 ===== デバッグエンドポイント =====');
+    console.log(`🔍 Redis状態確認: http://localhost:${PORT}/debug/redis`);
+    console.log(`🧹 マッチクリア: http://localhost:${PORT}/debug/clear-matches`);
     console.log('🚀 ===================================');
 }); 

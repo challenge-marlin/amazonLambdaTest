@@ -11,15 +11,49 @@ class MatchModel extends BaseModel {
      * Redis接続を取得
      */
     async getRedisConnection() {
-        if (!this.redis) {
+        if (!this.redis || this.redis.status === 'close' || this.redis.status === 'end') {
+            console.log("🔄 Redis接続を再作成中...");
             this.redis = new Redis({
                 host: process.env.REDIS_HOST || 'localhost',
                 port: process.env.REDIS_PORT || 6379,
                 password: process.env.REDIS_PASSWORD || '',
+                db: 0,
+                connectTimeout: 10000,
+                lazyConnect: true,
+                retryDelayOnFailover: 100,
+                enableReadyCheck: false,
+                maxRetriesPerRequest: 3,
                 retryStrategy: (times) => {
-                    return Math.min(times * 100, 3000);
+                    const delay = Math.min(times * 50, 2000);
+                    console.log(`🔄 Redis再接続試行 ${times}: ${delay}ms後にリトライ`);
+                    return delay;
+                },
+                reconnectOnError: (err) => {
+                    console.log('🔄 Redis再接続判定:', err.message);
+                    return err.message.includes('READONLY') || err.message.includes('Connection is closed');
                 }
             });
+
+            this.redis.on('connect', () => {
+                console.log('✅ Redis接続成功');
+            });
+
+            this.redis.on('error', (err) => {
+                console.error('❌ Redis接続エラー:', err.message);
+            });
+
+            this.redis.on('close', () => {
+                console.log('🔌 Redis接続が閉じられました');
+            });
+
+            // 接続を確立
+            try {
+                await this.redis.connect();
+                console.log('✅ Redis接続確立完了');
+            } catch (error) {
+                console.error('❌ Redis接続確立失敗:', error.message);
+                throw error;
+            }
         }
         return this.redis;
     }
@@ -28,8 +62,18 @@ class MatchModel extends BaseModel {
      * Redis接続をクローズ
      */
     async closeRedis() {
-        if (this.redis) {
-            await this.redis.quit();
+        if (this.redis && this.redis.status !== 'close' && this.redis.status !== 'end') {
+            try {
+                await this.redis.quit();
+                console.log('✅ Redis接続を正常にクローズ');
+            } catch (error) {
+                console.error('⚠️ Redis切断エラー:', error.message);
+                try {
+                    this.redis.disconnect();
+                } catch (disconnectError) {
+                    console.error('⚠️ Redis強制切断エラー:', disconnectError.message);
+                }
+            }
             this.redis = null;
         }
     }
@@ -79,7 +123,38 @@ class MatchModel extends BaseModel {
     }
 
     /**
+     * 同日対戦履歴をチェック（将来実装用）
+     * @param {string} userId1 プレイヤー1のID
+     * @param {string} userId2 プレイヤー2のID
+     * @returns {Promise<boolean>} 対戦可能かどうか
+     */
+    async checkDailyMatchHistory(userId1, userId2) {
+        try {
+            // 現在はテスト用に常にtrueを返す
+            // 将来的にはDATEカラムを使って同日対戦回数をチェック
+            const today = new Date().toISOString().split('T')[0];
+            
+            // TODO: 将来実装時のクエリ例
+            // const query = `
+            //     SELECT COUNT(*) as match_count 
+            //     FROM janken_history 
+            //     WHERE ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
+            //     AND DATE(created_at) = ?
+            // `;
+            // const [rows] = await this.executeQuery(query, [userId1, userId2, userId2, userId1, today]);
+            // return rows[0].match_count < 2; // 1日2回まで
+            
+            console.log(`同日対戦チェック: ${userId1} vs ${userId2} (${today}) - 現在はテスト用に許可`);
+            return true; // テスト用に常に許可
+        } catch (error) {
+            console.error('同日対戦履歴チェックエラー:', error);
+            return true; // エラー時は許可
+        }
+    }
+
+    /**
      * 待機中のマッチを検索（ランダムマッチング用）
+     * 将来的には同日対戦制限も考慮
      */
     async findWaitingMatch(excludeUserId) {
         const redis = await this.getRedisConnection();
@@ -96,6 +171,13 @@ class MatchModel extends BaseModel {
                     !matchData.player2_id && 
                     matchData.player1_id !== excludeUserId &&
                     matchData.matchType === 'random') {
+                    
+                    // 将来実装: 同日対戦制限チェック
+                    const canMatch = await this.checkDailyMatchHistory(excludeUserId, matchData.player1_id);
+                    if (!canMatch) {
+                        console.log(`同日対戦制限により ${matchData.player1_id} とのマッチングをスキップ`);
+                        continue; // このマッチをスキップして次を探す
+                    }
                     
                     // match:プレフィックスを削除してmatchingIdを返す
                     return key.replace('match:', '');
@@ -176,11 +258,15 @@ class MatchModel extends BaseModel {
      * プレイヤーの手を記録
      */
     async submitHand(matchingId, userId, hand) {
+        console.log(`🎯 submitHand開始: matchingId=${matchingId}, userId=${userId}, hand=${hand}`);
+        
         const matchData = await this.getMatchData(matchingId);
         
         if (!matchData) {
             throw new Error('マッチが見つかりません');
         }
+
+        console.log(`📊 現在のマッチデータ:`, JSON.stringify(matchData, null, 2));
 
         if (matchData.game_status === "finished") {
             throw new Error('このマッチは既に終了しています');
@@ -190,11 +276,15 @@ class MatchModel extends BaseModel {
         const handHistoryKey = `${userId}_hand_history`;
         const handHistory = matchData[handHistoryKey] ? JSON.parse(matchData[handHistoryKey]) : [];
         
+        console.log(`📝 現在の手履歴 (${handHistoryKey}):`, handHistory);
+        
         // 相手プレイヤーの手履歴を取得
         const otherPlayerId = matchData.player1_id === userId ? matchData.player2_id : matchData.player1_id;
         if (otherPlayerId) {
             const otherHandHistoryKey = `${otherPlayerId}_hand_history`;
             const otherHandHistory = matchData[otherHandHistoryKey] ? JSON.parse(matchData[otherHandHistoryKey]) : [];
+            
+            console.log(`👥 相手の手履歴 (${otherHandHistoryKey}):`, otherHandHistory);
             
             // 重複送信チェック
             if (handHistory.length > otherHandHistory.length) {
@@ -204,6 +294,7 @@ class MatchModel extends BaseModel {
 
         // 手を履歴に追加
         handHistory.push(hand);
+        console.log(`➕ 手を追加後の履歴:`, handHistory);
 
         // 両プレイヤーの手が揃ったかチェック
         let gameStatus = "waiting";
@@ -216,6 +307,9 @@ class MatchModel extends BaseModel {
             if (handHistory.length === otherHandHistory.length && handHistory.length > 0) {
                 gameStatus = "ready";
                 canJudge = true;
+                console.log(`🎊 両プレイヤーの手が揃いました！ラウンド${handHistory.length}`);
+            } else {
+                console.log(`⏳ 相手の手を待機中... 自分:${handHistory.length}, 相手:${otherHandHistory.length}`);
             }
         }
 
@@ -227,7 +321,11 @@ class MatchModel extends BaseModel {
             lastUpdateTime: Date.now().toString()
         };
 
+        console.log(`💾 Redis保存前のデータ:`, JSON.stringify(updatedMatchData, null, 2));
+        
         await this.saveMatchData(matchingId, updatedMatchData);
+        
+        console.log(`✅ Redis保存完了`);
 
         return {
             success: true,
@@ -277,18 +375,34 @@ class MatchModel extends BaseModel {
         } else {
             updatedMatchData.winner = result.winner;
             updatedMatchData.game_status = "finished";
+            // 判定結果をRedisに保存
+            updatedMatchData.result = JSON.stringify({
+                player1_hand: player1Hand,
+                player2_hand: player2Hand,
+                player1_result: result.isDraw ? 'draw' : (result.winner === '1' ? 'win' : 'lose'),
+                player2_result: result.isDraw ? 'draw' : (result.winner === '2' ? 'win' : 'lose'),
+                winner: result.winner,
+                is_draw: result.isDraw,
+                draw_count: parseInt(matchData.drawCount) || 0,
+                judged: true,
+                judged_at: new Date().toISOString(),
+                is_finished: !result.isDraw
+            });
         }
 
+        console.log(`🎯 判定結果をRedisに保存: game_status=${updatedMatchData.game_status}`);
         await this.saveMatchData(matchingId, updatedMatchData);
 
         return {
             player1: {
                 id: matchData.player1_id,
-                hand: player1Hand
+                hand: player1Hand,
+                result: result.isDraw ? 'draw' : (result.winner === '1' ? 'win' : 'lose')
             },
             player2: {
                 id: matchData.player2_id,
-                hand: player2Hand
+                hand: player2Hand,
+                result: result.isDraw ? 'draw' : (result.winner === '2' ? 'win' : 'lose')
             },
             result: result.result,
             winner: result.winner,
@@ -335,16 +449,44 @@ class MatchModel extends BaseModel {
      * マッチ履歴をデータベースに保存
      */
     async saveMatchHistory(matchingId, player1Id, player2Id, player1Hand, player2Hand, result, winner) {
+        // じゃんけんの手を英語表記に変換
+        const handMapping = {
+            'グー': 'rock',
+            'チョキ': 'scissors', 
+            'パー': 'paper'
+        };
+
+        // 勝敗結果を計算
+        let player1_result, player2_result;
+        if (result === 'draw') {
+            player1_result = 'draw';
+            player2_result = 'draw';
+        } else if (winner === '1') {
+            player1_result = 'win';
+            player2_result = 'lose';
+        } else if (winner === '2') {
+            player1_result = 'lose';
+            player2_result = 'win';
+        }
+
+        // マッチタイプを決定（デフォルトはrandom）
+        const match_type = 'random';
+
         const matchHistory = {
-            matching_id: matchingId,
             player1_id: player1Id,
             player2_id: player2Id,
-            player1_hand: player1Hand,
-            player2_hand: player2Hand,
-            result: result,
-            winner: winner,
-            created_at: new Date()
+            player1_hand: handMapping[player1Hand] || player1Hand,
+            player2_hand: handMapping[player2Hand] || player2Hand,
+            player1_result: player1_result,
+            player2_result: player2_result,
+            winner: parseInt(winner) || 0,
+            draw_count: 0, // 現在のラウンドでの引き分け回数（通常は0）
+            match_type: match_type,
+            created_at: new Date(),
+            finished_at: result !== 'draw' ? new Date() : null
         };
+
+        console.log(`💾 マッチ履歴保存:`, matchHistory);
 
         return await this.create('match_history', matchHistory);
     }

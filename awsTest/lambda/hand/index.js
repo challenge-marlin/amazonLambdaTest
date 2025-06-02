@@ -66,6 +66,24 @@ exports.handler = async (event) => {
                 const result = await matchController.resetHands(matchingId);
                 return result;
                 
+            } else if (path.includes('/ready') || path === '/match/ready') {
+                // 準備完了処理
+                let body;
+                try {
+                    body = JSON.parse(event.body);
+                } catch (err) {
+                    return ResponseService.validationError("Invalid JSON format");
+                }
+                
+                const { userId, matchingId } = body;
+                if (!userId || !matchingId) {
+                    return ResponseService.validationError("ユーザーIDとマッチングIDは必須です");
+                }
+                
+                // MatchControllerを使用して準備完了処理
+                const result = await matchController.setPlayerReady(body);
+                return result;
+                
             } else {
                 // 手の送信処理
                 let body;
