@@ -1,0 +1,17 @@
+{
+  "name": "check-userid-lambda",
+  "version": "1.0.0",
+  "description": "check-userid Lambda function for the game",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha tests/unit/"
+  },
+  "dependencies": {
+    "aws-serverless-express": "^3.4.0"
+  },
+  "devDependencies": {
+    "chai": "^4.3.6",
+    "mocha": "^10.2.0"
+  }
+} 

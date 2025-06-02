@@ -177,6 +177,36 @@ class UserController {
             return ResponseService.error("ユーザー情報取得中にエラーが発生しました");
         }
     }
+
+    /**
+     * ユーザーID重複チェック
+     */
+    async checkUserId(requestData) {
+        try {
+            console.log("ユーザーID重複チェック処理開始 - RequestData:", requestData);
+
+            // バリデーション
+            if (!requestData || !requestData.userId) {
+                return ResponseService.validationError("ユーザーIDは必須です");
+            }
+
+            const { userId } = requestData;
+
+            // ユーザーIDの存在確認
+            const userExists = await this.userModel.userExists(userId);
+
+            if (userExists) {
+                // HTTPステータスコード409 (Conflict) を使用
+                return ResponseService.businessError("このユーザーIDは既に使用されています。", 'USER_ID_ALREADY_EXISTS', 409);
+            }
+
+            return ResponseService.success({ message: "このユーザーIDは使用可能です" });
+
+        } catch (error) {
+            console.error("ユーザーID重複チェック処理エラー:", error);
+            return ResponseService.error("ユーザーID重複チェック処理中にエラーが発生しました");
+        }
+    }
 }
 
 module.exports = UserController; 
