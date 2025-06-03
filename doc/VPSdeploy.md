@@ -101,6 +101,9 @@ docker-compose -f docker-compose.vps.yml up -d
 docker-compose -f docker-compose.vps.yml down
 docker-compose -f docker-compose.vps.yml up -d
 
+# 再起動
+docker-compose -f docker-compose.vps.yml restart lambda-local
+
 # ログ確認
 docker-compose -f docker-compose.vps.yml logs lambda-local
 
