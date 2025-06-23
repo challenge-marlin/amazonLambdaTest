@@ -109,7 +109,62 @@ CREATE TABLE IF NOT EXISTS user_stats (
     show_title BOOLEAN DEFAULT TRUE,
     show_alias BOOLEAN DEFAULT TRUE,
     user_rank VARCHAR(20) DEFAULT 'no_rank',
+    daily_ranking INT DEFAULT 0,
     last_reset_at DATE NOT NULL,
     PRIMARY KEY (management_code),
     FOREIGN KEY (management_code) REFERENCES users(management_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; 
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ユーザー登録時のトリガー
+DELIMITER //
+CREATE TRIGGER IF NOT EXISTS after_user_insert
+AFTER INSERT ON users
+FOR EACH ROW
+BEGIN
+    INSERT INTO user_stats (
+        management_code,
+        user_id,
+        total_wins,
+        current_win_streak,
+        max_win_streak,
+        hand_stats_rock,
+        hand_stats_scissors,
+        hand_stats_paper,
+        favorite_hand,
+        recent_hand_results_str,
+        daily_wins,
+        daily_losses,
+        daily_draws,
+        title,
+        available_titles,
+        alias,
+        show_title,
+        show_alias,
+        user_rank,
+        daily_ranking,
+        last_reset_at
+    ) VALUES (
+        NEW.management_code,
+        NEW.user_id,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        '',
+        '',
+        0,
+        0,
+        0,
+        '',
+        '',
+        '',
+        TRUE,
+        TRUE,
+        'no_rank',
+        0,
+        CURRENT_DATE
+    );
+END //
+DELIMITER ; 

@@ -14,27 +14,37 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   mysql:
-    image: mysql:8.0
+    build:
+      context: .
+      dockerfile: Dockerfile.mysql
     container_name: awstest-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: jankendb
       MYSQL_USER: lambda_user
       MYSQL_PASSWORD: lambda_password
-    ports:
-      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ../doc/sql/create_tables.sql:/docker-entrypoint-initdb.d/01-create-tables.sql
-      - ../doc/sql:/sql
-    command: --default-authentication-plugin=mysql_native_password
+      - ./doc/sql/create_tables.sql:/docker-entrypoint-initdb.d/01_create_tables.sql:ro
+      - ./doc/sql/seed_users.sql:/docker-entrypoint-initdb.d/02_seed_users.sql:ro
+      - ./doc/sql/seed_user_stats.sql:/docker-entrypoint-initdb.d/03_seed_user_stats.sql:ro
+      - ./doc/sql/seed_daily_ranking.sql:/docker-entrypoint-initdb.d/04_seed_daily_ranking.sql:ro
+      - ./doc/sql/seed_match_history.sql:/docker-entrypoint-initdb.d/05_seed_match_history.sql:ro
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password --wait_timeout=28800 --interactive_timeout=28800
     networks:
       - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "lambda_user", "-plambda_password"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -49,6 +59,7 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    command: redis-server --timeout 0 --tcp-keepalive 300
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -73,14 +84,48 @@ services:
       - DB_PASSWORD=lambda_password
       - DB_NAME=jankendb
       - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=512
+      - CONNECTION_TIMEOUT=30000
+      - REQUEST_TIMEOUT=30000
+      - MINIO_ENDPOINT=awstest-minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  minio:
+    image: minio/minio
+    container_name: awstest-minio
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
 networks:
   app-network:
@@ -88,4 +133,5 @@ networks:
 
 volumes:
   mysql_data:
-  redis_data: 
+  redis_data:
+  minio_data: 

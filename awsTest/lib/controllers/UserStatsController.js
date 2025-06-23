@@ -225,6 +225,46 @@ class UserStatsController {
             return ResponseService.error("デイリー統計リセット中にエラーが発生しました");
         }
     }
+
+    /**
+     * 表示設定更新
+     */
+    async updateDisplaySettings(userId, { showTitle, showAlias }) {
+        try {
+            if (!userId) {
+                return ResponseService.validationError("ユーザーIDは必須です");
+            }
+
+            // バリデーション
+            if (typeof showTitle !== 'boolean' || typeof showAlias !== 'boolean') {
+                return ResponseService.validationError("showTitleとshowAliasはブール値である必要があります");
+            }
+
+            // 表示設定を更新
+            await this.userStatsModel.updateDisplaySettings(userId, { showTitle, showAlias });
+
+            // 更新後の統計情報を取得
+            const updatedStats = await this.userStatsModel.getUserStats(userId);
+
+            if (!updatedStats) {
+                return ResponseService.notFound("ユーザーが見つかりません");
+            }
+
+            return ResponseService.success({ 
+                message: "表示設定が更新されました",
+                stats: {
+                    userId: updatedStats.user_id,
+                    showTitle: updatedStats.show_title,
+                    showAlias: updatedStats.show_alias,
+                    updatedAt: updatedStats.updated_at
+                }
+            });
+
+        } catch (error) {
+            console.error("表示設定更新エラー:", error);
+            return ResponseService.error("表示設定更新中にエラーが発生しました");
+        }
+    }
 }
 
 module.exports = UserStatsController; 

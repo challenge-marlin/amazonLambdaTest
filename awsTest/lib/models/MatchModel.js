@@ -106,7 +106,7 @@ class MatchModel extends BaseModel {
                 const matchData = await redis.hgetall(key);
                 
                 // マッチが終了していない場合のみチェック
-                if (matchData.game_status !== 'finished') {
+                if (matchData.game_status !== 'finished' && matchData.game_status !== 'cancelled') {
                     // プレイヤー1またはプレイヤー2として参加している場合
                     if (matchData.player1_id === userId || matchData.player2_id === userId) {
                         // match:プレフィックスを削除してmatchingIdを返す
@@ -198,7 +198,21 @@ class MatchModel extends BaseModel {
         const redis = await this.getRedisConnection();
         const matchKey = `match:${matchingId}`;
         try {
-            await redis.hmset(matchKey, matchData);
+            // 文字エンコーディング問題対策：文字列を安全に処理
+            const safeMatchData = {};
+            for (const [key, value] of Object.entries(matchData)) {
+                if (typeof value === 'string') {
+                    // 不正な文字を除去
+                    safeMatchData[key] = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/g, '');
+                } else {
+                    safeMatchData[key] = value;
+                }
+            }
+            
+            await redis.hmset(matchKey, safeMatchData);
+            // 30分（1800秒）のTTLを設定
+            await redis.expire(matchKey, 1800);
+            console.log(`⏰ マッチデータにTTL設定: ${matchKey} (30分)`);
             return true;
         } catch (error) {
             console.error("マッチデータ保存エラー:", error);
@@ -489,6 +503,111 @@ class MatchModel extends BaseModel {
         console.log(`💾 マッチ履歴保存:`, matchHistory);
 
         return await this.create('match_history', matchHistory);
+    }
+
+    /**
+     * マッチを辞退する
+     */
+    async quitMatch(matchingId, userId) {
+        const redis = await this.getRedisConnection();
+        const matchKey = `match:${matchingId}`;
+        
+        try {
+            const matchData = await this.getMatchData(matchingId);
+            
+            if (!matchData) {
+                throw new Error('マッチが見つかりません');
+            }
+
+            // プレイヤーが参加しているかチェック
+            if (matchData.player1_id !== userId && matchData.player2_id !== userId) {
+                throw new Error('このマッチに参加していません');
+            }
+
+            // 辞退者と相手を特定
+            const isPlayer1 = matchData.player1_id === userId;
+            const quitterId = userId;
+            const opponentId = isPlayer1 ? matchData.player2_id : matchData.player1_id;
+
+            // マッチデータを辞退状態に更新
+            const updatedMatchData = {
+                ...matchData,
+                game_status: "cancelled",
+                quit_by: quitterId,
+                quit_at: new Date().toISOString(),
+                lastUpdateTime: Date.now().toString()
+            };
+
+            // 相手がいる場合は結果を設定
+            if (opponentId) {
+                updatedMatchData.result = JSON.stringify({
+                    quit_by: quitterId,
+                    winner: isPlayer1 ? '2' : '1', // 辞退していない方が勝者
+                    player1_result: isPlayer1 ? 'quit' : 'win',
+                    player2_result: isPlayer1 ? 'win' : 'quit',
+                    is_draw: false,
+                    is_finished: true,
+                    quit_at: new Date().toISOString()
+                });
+            }
+
+            await this.saveMatchData(matchingId, updatedMatchData);
+            
+            console.log(`🚪 プレイヤー ${userId} がマッチ ${matchingId} を辞退しました`);
+            
+            return {
+                success: true,
+                matchingId: matchingId,
+                quitterId: quitterId,
+                opponentId: opponentId,
+                message: "マッチを辞退しました"
+            };
+
+        } catch (error) {
+            console.error("マッチ辞退エラー:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * マッチを強制終了（タイムアウトや接続切れ時）
+     */
+    async forceEndMatch(matchingId, reason = "timeout") {
+        const redis = await this.getRedisConnection();
+        const matchKey = `match:${matchingId}`;
+        
+        try {
+            const matchData = await this.getMatchData(matchingId);
+            
+            if (!matchData) {
+                console.log(`⚠️ 強制終了対象のマッチが見つかりません: ${matchingId}`);
+                return null;
+            }
+
+            // マッチデータを強制終了状態に更新
+            const updatedMatchData = {
+                ...matchData,
+                game_status: "force_ended",
+                end_reason: reason,
+                ended_at: new Date().toISOString(),
+                lastUpdateTime: Date.now().toString()
+            };
+
+            await this.saveMatchData(matchingId, updatedMatchData);
+            
+            console.log(`🔚 マッチ ${matchingId} を強制終了しました (理由: ${reason})`);
+            
+            return {
+                success: true,
+                matchingId: matchingId,
+                reason: reason,
+                message: "マッチが強制終了されました"
+            };
+
+        } catch (error) {
+            console.error("マッチ強制終了エラー:", error);
+            throw error;
+        }
     }
 }
 

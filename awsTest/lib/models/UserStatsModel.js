@@ -245,6 +245,22 @@ class UserStatsModel extends BaseModel {
         `;
         return await this.executeQuery(query);
     }
+
+    /**
+     * 表示設定更新
+     */
+    async updateDisplaySettings(userId, { showTitle, showAlias }) {
+        const query = `
+            UPDATE user_stats us
+            JOIN users u ON us.management_code = u.management_code
+            SET 
+                us.show_title = ?,
+                us.show_alias = ?,
+                us.updated_at = NOW()
+            WHERE u.user_id = ?
+        `;
+        return await this.executeQuery(query, [showTitle, showAlias, userId]);
+    }
 }
 
 module.exports = UserStatsModel; 

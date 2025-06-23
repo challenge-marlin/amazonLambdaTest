@@ -29,8 +29,28 @@ exports.handler = async (event) => {
         } else if (event.httpMethod === 'POST') {
             // POSTリクエストの場合は、URLパスに応じて処理を分岐
             const path = event.path || '';
+            console.log(`🔍 POST Request Path: "${path}"`);
             
-            if (path === '/match') {
+            if (path.includes('/quit') || path === '/match/quit') {
+                // マッチ辞退処理
+                console.log('🚪 マッチ辞退処理を実行');
+                let body;
+                try {
+                    body = JSON.parse(event.body);
+                } catch (err) {
+                    return ResponseService.validationError("Invalid JSON format");
+                }
+                
+                const { userId, matchingId } = body;
+                if (!userId || !matchingId) {
+                    return ResponseService.validationError("ユーザーIDとマッチングIDは必須です");
+                }
+                
+                // MatchControllerを使用してマッチ辞退処理
+                const result = await matchController.quitMatch(body);
+                return result;
+                
+            } else if (path === '/match') {
                 // マッチング開始処理
                 let body;
                 try {
@@ -85,7 +105,8 @@ exports.handler = async (event) => {
                 return result;
                 
             } else {
-                // 手の送信処理
+                // 手の送信処理（デフォルト）
+                console.log('✋ 手の送信処理を実行');
                 let body;
                 try {
                     body = JSON.parse(event.body);

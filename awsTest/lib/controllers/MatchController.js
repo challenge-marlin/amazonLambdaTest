@@ -227,11 +227,18 @@ class MatchController {
                 player2_ready = false;
             }
 
+            // ゲームが辞退された場合
+            if (matchData.game_status === 'cancelled') {
+                status = "cancelled";
+            }
+            
             // 結果判定済みの場合は結果に応じてステータスを設定
             if (matchData.result && matchData.result !== 'null') {
                 try {
                     const result = JSON.parse(matchData.result);
-                    if (result.is_draw) {
+                    if (result.quit_by) {
+                        status = "cancelled";
+                    } else if (result.is_draw) {
                         status = "draw";
                     } else if (result.is_finished) {
                         status = "finished";
@@ -654,6 +661,60 @@ class MatchController {
         } catch (error) {
             console.error("準備完了処理エラー:", error);
             return ResponseService.error("準備完了処理中にエラーが発生しました");
+        }
+    }
+
+    /**
+     * マッチ辞退処理
+     */
+    async quitMatch(requestData) {
+        try {
+            const { userId, matchingId } = requestData;
+
+            if (!userId) {
+                return ResponseService.validationError("ユーザーIDは必須です");
+            }
+
+            if (!matchingId) {
+                return ResponseService.validationError("マッチングIDは必須です");
+            }
+
+            console.log(`🚪 マッチ辞退処理開始: userId=${userId}, matchingId=${matchingId}`);
+
+            const result = await this.matchModel.quitMatch(matchingId, userId);
+
+            console.log(`✅ マッチ辞退完了: ${JSON.stringify(result)}`);
+
+            // 仕様書通りの形式で返す
+            return {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                body: JSON.stringify({
+                    success: true,
+                    message: result.message,
+                    matchingId: result.matchingId,
+                    status: "cancelled"
+                }, null, 0, 'utf8')
+            };
+
+        } catch (error) {
+            console.error("マッチ辞退エラー:", error);
+            
+            // ビジネスロジックエラーの場合
+            if (error.message.includes('見つかりません') || 
+                error.message.includes('参加していません')) {
+                return ResponseService.businessError(error.message);
+            }
+
+            return ResponseService.error("マッチ辞退中にエラーが発生しました");
+        } finally {
+            // Redis接続をクリーンアップ
+            await this.matchModel.closeRedis();
         }
     }
 }

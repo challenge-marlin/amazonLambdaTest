@@ -1,0 +1,7 @@
+FROM mysql:8.0
+
+COPY ./doc/sql/create_tables.sql /docker-entrypoint-initdb.d/01_create_tables.sql
+COPY ./doc/sql/seed_users.sql /docker-entrypoint-initdb.d/02_seed_users.sql
+COPY ./doc/sql/seed_user_stats.sql /docker-entrypoint-initdb.d/03_seed_user_stats.sql
+COPY ./doc/sql/seed_daily_ranking.sql /docker-entrypoint-initdb.d/04_seed_daily_ranking.sql
+COPY ./doc/sql/seed_match_history.sql /docker-entrypoint-initdb.d/05_seed_match_history.sql 

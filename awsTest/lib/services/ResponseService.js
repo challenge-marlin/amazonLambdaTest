@@ -81,11 +81,10 @@ class ResponseService {
      * じゃんけんゲーム用の成功レスポンス
      */
     static gameSuccess(message, gameData, statusCode = 200) {
-        return this.createResponse(statusCode, {
-            success: true,
+        return this.success({
             message,
             ...gameData
-        });
+        }, statusCode);
     }
 
     /**
@@ -93,7 +92,6 @@ class ResponseService {
      */
     static loginSuccess(user, token = null) {
         const responseData = {
-            success: true,
             user
         };
 
@@ -101,7 +99,7 @@ class ResponseService {
             responseData.token = token;
         }
 
-        return this.createResponse(200, responseData);
+        return this.success(responseData);
     }
 
     /**
@@ -109,15 +107,43 @@ class ResponseService {
      */
     static listSuccess(items, pagination = null) {
         const responseData = {
-            success: true,
-            data: items
+            items
         };
 
         if (pagination) {
             responseData.pagination = pagination;
         }
 
-        return this.createResponse(200, responseData);
+        return this.success(responseData);
+    }
+
+    /**
+     * 非推奨APIの警告ヘッダーを生成
+     */
+    static deprecatedApiHeaders(newApiPath) {
+        return {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Deprecation': 'true',
+            'Sunset': 'Wed, 1 Aug 2024 00:00:00 GMT',
+            'Link': `<${newApiPath}>; rel="successor-version"`,
+            'Warning': '299 - "This API is deprecated and will be removed on August 1st, 2024. Please migrate to the new API."'
+        };
+    }
+
+    /**
+     * 非推奨APIのレスポンスを生成
+     */
+    static deprecated(data, newApiPath) {
+        return {
+            success: true,
+            data: data,
+            warning: {
+                message: "This API is deprecated and will be removed on August 1st, 2024.",
+                newApiPath: newApiPath,
+                documentationUrl: "https://github.com/your-repo/docs/migration-guide.md"
+            }
+        };
     }
 }
 
