@@ -24,3 +24,4 @@ exports.handler = async (event) => {
         return ResponseService.error("判定処理中にエラーが発生しました");
     }
 }; 
+ 

@@ -1,0 +1,8 @@
+{
+  "httpMethod": "POST",
+  "path": "/register",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"data\":{\"userId\":\"test123\",\"email\":\"test@example.com\",\"password\":\"test123!\",\"name\":\"Test User\",\"nickname\":\"Tester\",\"profileImageUrl\":\"https://example.com/default.jpg\",\"studentIdImageUrl\":\"https://example.com/student.jpg\"}}"
+} 

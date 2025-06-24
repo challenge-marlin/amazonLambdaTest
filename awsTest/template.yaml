@@ -29,19 +29,10 @@ Globals:
         - !Ref PrivateSubnet2
     Environment:
       Variables:
-        # 本番環境の場合はParameter Storeから取得
-        # dockerがマルチコンテナの場合それぞれのサービスのアドレスは[127.0.0.1]とは限らない、「docker network inspect [ネットワーク名]」で確認
-        #DB_HOST: !If [IsLocal, "awstest-mysql", "{{resolve:ssm:/janken/db/host}}"]
-        #DB_USER: !If [IsLocal, "lambda_user", "{{resolve:ssm:/janken/db/user}}"]
-        #DB_PASSWORD: !If [IsLocal, "lambda_password", "{{resolve:ssm:/janken/db/password}}"]
-        #DB_NAME: !If [IsLocal, "jankendb", "{{resolve:ssm:/janken/db/name}}"]
         DB_HOST: "awstest-mysql"
         DB_USER: "lambda_user"
         DB_PASSWORD: "lambda_password"
         DB_NAME: "jankendb"
-        #REDIS_HOST: !If [IsLocal, "awstest-redis", "{{resolve:ssm:/janken/redis/host}}"]
-        #REDIS_PORT: !If [IsLocal, "6379", "{{resolve:ssm:/janken/redis/port}}"]
-        #REDIS_PASSWORD: !If [IsLocal, "", "{{resolve:ssm:/janken/redis/password}}"]
         REDIS_HOST: "awstest-redis"
         REDIS_PORT: "6379"
 
@@ -51,6 +42,48 @@ Conditions:
     - local
 
 Resources:
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub ${AWS::StackName}-usage-plan
+      Description: Usage plan for Janken Game API
+      Quota:
+        Limit: 1000000
+        Period: MONTH
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 50
+
+  DevApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${AWS::StackName}-dev-key
+      Description: Development environment API key
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref JankenApi
+          StageName: dev
+
+  StagingApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${AWS::StackName}-staging-key
+      Description: Staging environment API key
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref JankenApi
+          StageName: stg
+
+  ProdApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${AWS::StackName}-prod-key
+      Description: Production environment API key
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref JankenApi
+          StageName: prod
+
   JankenApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -58,8 +91,10 @@ Resources:
       Cors:
         AllowMethods: "'GET,POST,PUT,DELETE'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
-        AllowHeaders: "'Content-Type,X-Amz-Date'"
         AllowOrigin: "'*'"
+      Auth:
+        ApiKeyRequired: true
+      UsagePlanId: !Ref ApiUsagePlan
 
   HandFunction:
     Type: AWS::Serverless::Function
@@ -112,7 +147,7 @@ Resources:
             Path: /login
             Method: POST
 
-  TestFunction:
+  UserStatsDisplayFunction:
     Type: AWS::Serverless::Function
     Metadata:
       DockerContext: .
@@ -120,72 +155,15 @@ Resources:
       DockerTag: nodejs20.x-v1
     Properties:
       CodeUri: .
-      Handler: lambda/test/index.handler
+      Handler: lambda/lobby/user-stats/display/index.handler
       Events:
-        GetUserInfo:
+        UpdateDisplaySettings:
           Type: Api
           Properties:
             RestApiId: !Ref JankenApi
-            Path: /test/user
-            Method: POST
-        GetUserById:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JankenApi
-            Path: /users/{userId}
-            Method: GET
-
-  UserFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      DockerContext: .
-      Dockerfile: Dockerfile
-      DockerTag: nodejs20.x-v1
-    Properties:
-      CodeUri: .
-      Handler: lambda/user/index.handler
-      Events:
-        GetUser:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JankenApi
-            Path: /api/user
-            Method: GET
-        UpdateUser:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JankenApi
-            Path: /api/user
+            Path: /api/lobby/user-stats/{userId}/display
             Method: PUT
-        UploadProfileImage:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JankenApi
-            Path: /api/user/profile-image
-            Method: POST
 
-  UserStatsFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      DockerContext: .
-      Dockerfile: Dockerfile
-      DockerTag: nodejs20.x-v1
-    Properties:
-      CodeUri: .
-      Handler: lambda/user-stats/index.handler
-      Events:
-        GetUserStats:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JankenApi
-            Path: /api/user-stats/{userId}
-            Method: GET
-        UpdateUserStats:
-          Type: Api
-          Properties:
-            RestApiId: !Ref JankenApi
-            Path: /api/user-stats/{userId}
-            Method: PUT
   RegisterFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -202,10 +180,71 @@ Resources:
             RestApiId: !Ref JankenApi
             Path: /register
             Method: POST
+
+  StudentIdImageFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: .
+      Handler: lambda/settings/user-profile/student-id-image/index.handler
+      Events:
+        UploadStudentIdImage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/settings/user-profile/{userId}/student-id-image
+            Method: POST
+
+  TitleAliasSettingsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: .
+      Handler: lambda/settings/user-profile/title-alias/index.handler
+      Events:
+        UpdateTitleAlias:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/settings/user-profile/{userId}/title-alias
+            Method: PUT
+
+  ImageDeleteFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs20.x-v1
+    Properties:
+      CodeUri: .
+      Handler: lambda/settings/user-profile/image/delete/index.handler
+      Events:
+        DeleteImage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JankenApi
+            Path: /api/settings/user-profile/{userId}/image
+            Method: DELETE
+
 Outputs:
   JankenApi:
     Description: API Gateway endpoint URL
     Value: !Sub "https://${JankenApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
+  DevApiKey:
+    Description: Development API Key
+    Value: !Ref DevApiKey
+  StagingApiKey:
+    Description: Staging API Key
+    Value: !Ref StagingApiKey
+  ProdApiKey:
+    Description: Production API Key
+    Value: !Ref ProdApiKey
   HandFunction:
     Description: Hand Submission Lambda Function ARN
     Value: !GetAtt HandFunction.Arn
@@ -215,15 +254,18 @@ Outputs:
   LoginFunction:
     Description: Login Lambda Function ARN
     Value: !GetAtt LoginFunction.Arn
-  TestFunction:
-    Description: Test Lambda Function ARN
-    Value: !GetAtt TestFunction.Arn
-  UserFunction:
-    Description: User API Lambda Function ARN
-    Value: !GetAtt UserFunction.Arn
-  UserStatsFunction:
-    Description: User Stats API Lambda Function ARN
-    Value: !GetAtt UserStatsFunction.Arn 
+  UserStatsDisplayFunction:
+    Description: User Stats Display API Lambda Function ARN
+    Value: !GetAtt UserStatsDisplayFunction.Arn
   RegisterFunction:
     Description: Register API Lambda Function ARN
     Value: !GetAtt RegisterFunction.Arn
+  StudentIdImageFunction:
+    Description: Student ID Image Upload Lambda Function ARN
+    Value: !GetAtt StudentIdImageFunction.Arn
+  TitleAliasSettingsFunction:
+    Description: Title Alias Settings Lambda Function ARN
+    Value: !GetAtt TitleAliasSettingsFunction.Arn
+  ImageDeleteFunction:
+    Description: Image Delete Lambda Function ARN
+    Value: !GetAtt ImageDeleteFunction.Arn
