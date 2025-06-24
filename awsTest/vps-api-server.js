@@ -300,40 +300,30 @@ if (judgeHandler) {
 }
 
 // 認証API（ログイン画面専用）
-if (loginHandler) {
-    app.post('/login', (req, res) => wrapLambda(loginHandler.handler, req, res));
-    app.post('/UserInfo', (req, res) => wrapLambda(loginHandler.handler, req, res));
+if (loginHandler && registerHandler) {
+    app.post('/login', async (req, res) => {
+        await wrapLambda(loginHandler, req, res);
+    });
+    
+    app.post('/register', upload.fields([
+        { name: 'profileImage', maxCount: 1 },
+        { name: 'studentIdImage', maxCount: 1 }
+    ]), async (req, res) => {
+        await wrapLambda(registerHandler, req, res);
+    });
+    
+    app.get('/check-userid', async (req, res) => {
+        await wrapLambda(registerHandler, req, res);
+    });
+    
     console.log('🔐 Authentication API endpoints registered');
-}
-
-// 登録API（登録画面専用）
-if (registerHandler) {
-    app.get('/check-userid', (req, res) => wrapLambda(registerHandler.handler, req, res));
-    app.post('/register', (req, res) => wrapLambda(registerHandler.handler, req, res));
-    console.log('📝 Registration API endpoints registered');
 } else {
-    // 一時的な実装（handlerが利用できない場合）
-    app.get('/check-userid', (req, res) => {
-        const { userId } = req.query;
-        res.json({
-            success: true,
-            available: true,
-            message: "利用可能です"
-        });
-        console.log('✅ UserID check API called (temporary implementation)');
-    });
-
-    app.post('/register', (req, res) => {
-        res.json({
-            success: true,
-            message: "登録が完了しました",
-            user: {
-                userId: req.body.userId,
-                nickname: req.body.nickname
-            }
-        });
-        console.log('📝 User registration API called (temporary implementation)');
-    });
+    if (!registerHandler) {
+        console.log('❌ Register handler is not available - Server cannot start');
+    }
+    if (!loginHandler) {
+        console.log('❌ Login handler is not available - Server cannot start');
+    }
 }
 
 // ランキング画面API（ランキング画面専用）

@@ -1,32 +1,33 @@
 const ResponseService = require('../../lib/services/ResponseService');
 const ValidationService = require('../../lib/services/ValidationService');
-const mysql = require('mysql2/promise');
+const UserModel = require('../../lib/models/UserModel');
+const ImageStorage = require('../../utils/fileStorage');
 const crypto = require('crypto');
 
-// MySQL接続設定
-const dbConfig = {
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME
-};
+const userModel = new UserModel();
+const imageStorage = new ImageStorage();
 
 /**
  * ユーザーID重複チェック
  */
 async function checkUserIdAvailability(userId) {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await pool.getConnection();
+    console.log(`🔍 Checking userId availability for: ${userId}`);
     
     try {
         const [rows] = await connection.execute(
-            'SELECT user_id FROM users WHERE user_id = ?',
+            'SELECT COUNT(*) as count FROM users WHERE user_id = ?',
             [userId]
         );
         
-        return rows.length === 0; // 見つからなければ利用可能
+        console.log('🔍 Database query result:', rows[0]);
+        return rows[0].count === 0; // 見つからなければ利用可能
         
+    } catch (error) {
+        console.error('❌ Database error during userId check:', error);
+        throw error;
     } finally {
-        await connection.end();
+        connection.release();
     }
 }
 
@@ -34,7 +35,8 @@ async function checkUserIdAvailability(userId) {
  * 新規ユーザー登録
  */
 async function registerUser(userData) {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await pool.getConnection();
+    console.log('📝 Registering new user with data:', { ...userData, password: '[REDACTED]' });
     
     try {
         await connection.beginTransaction();
@@ -46,13 +48,14 @@ async function registerUser(userData) {
         const hashedPassword = crypto.createHash('sha256').update(userData.password).digest('hex');
         
         // ユーザー情報を挿入
-        await connection.execute(`
+        const userInsertQuery = `
             INSERT INTO users (
                 management_code, user_id, email, password, name, nickname,
                 postal_code, address, phone_number, university, birthdate,
                 profile_image_url, student_id_image_url, is_student_id_editable
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
+        `;
+        const userInsertValues = [
             managementCode,
             userData.userId,
             userData.email,
@@ -67,10 +70,17 @@ async function registerUser(userData) {
             userData.profileImageUrl || null,
             userData.studentIdImageUrl || null,
             false // is_student_id_editable
-        ]);
+        ];
+
+        console.log('📝 Executing user insert query:', {
+            query: userInsertQuery,
+            values: userInsertValues.map(v => v === hashedPassword ? '[REDACTED]' : v)
+        });
+
+        await connection.execute(userInsertQuery, userInsertValues);
         
         // ユーザー統計の初期データを挿入
-        await connection.execute(`
+        const statsInsertQuery = `
             INSERT INTO user_stats (
                 management_code, total_wins, total_losses, total_draws,
                 current_win_streak, max_win_streak, hand_stats_rock,
@@ -79,119 +89,195 @@ async function registerUser(userData) {
                 daily_draws, title, available_titles, alias,
                 show_title, show_alias, user_rank
             ) VALUES (?, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 0, 0, 0, '初心者', '初心者', '', true, true, 'bronze')
-        `, [managementCode]);
+        `;
+
+        console.log('📝 Executing stats insert query:', {
+            query: statsInsertQuery,
+            values: [managementCode]
+        });
+
+        await connection.execute(statsInsertQuery, [managementCode]);
         
         await connection.commit();
+        console.log('✅ User registration completed successfully');
+
+        // 登録したユーザーの情報を取得
+        const [userRows] = await connection.execute(
+            `SELECT 
+                u.user_id, 
+                u.nickname,
+                u.profile_image_url,
+                us.title,
+                us.alias
+            FROM users u
+            LEFT JOIN user_stats us ON u.management_code = us.management_code
+            WHERE u.management_code = ?`,
+            [managementCode]
+        );
         
-        return {
-            userId: userData.userId,
-            nickname: userData.nickname,
-            managementCode: managementCode
-        };
+        return userRows[0];
         
     } catch (error) {
+        console.error('❌ Error during user registration:', error);
         await connection.rollback();
         throw error;
     } finally {
-        await connection.end();
+        connection.release();
     }
 }
 
-exports.handler = async (event) => {
+/**
+ * マルチパートデータの解析
+ */
+async function parseMultipartData(req) {
     try {
-        const ResponseService = require('../../lib/services/ResponseService');
-        
-        if (event.httpMethod === 'GET' && event.path.includes('/check-userid')) {
+        const formData = await imageStorage.parseMultipartForm(req);
+        const fields = formData.fields;
+        const files = formData.files;
+
+        // ファイルのアップロード処理
+        let profileImageUrl = null;
+        let studentIdImageUrl = null;
+
+        if (files.profileImage) {
+            const result = await imageStorage.uploadImage(fields.userId, files.profileImage, 'profile');
+            profileImageUrl = result.url;
+        }
+        if (files.studentIdImage) {
+            const result = await imageStorage.uploadImage(fields.userId, files.studentIdImage, 'studentId');
+            studentIdImageUrl = result.url;
+        }
+
+        return {
+            ...fields,
+            profileImageUrl,
+            studentIdImageUrl
+        };
+    } catch (error) {
+        console.error('Error parsing multipart data:', error);
+        throw error;
+    }
+}
+
+/**
+ * Express用ハンドラー
+ */
+exports.handler = async (req, res) => {
+    try {
+        console.log('📥 Received request:', {
+            method: req.method,
+            path: req.path,
+            query: req.query,
+            headers: req.headers,
+            body: req.body
+        });
+
+        if (req.method === 'GET' && req.path.includes('/check-userid')) {
             // ユーザーID重複チェック処理
-            const { userId } = event.queryStringParameters || {};
+            const { userId } = req.query;
             
             if (!userId) {
-                return ResponseService.validationError("ユーザーIDは必須です");
-            }
-            
-            // バリデーション
-            if (userId.length < 3 || userId.length > 20) {
-                return ResponseService.validationError("ユーザーIDは3文字以上20文字以下である必要があります");
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'VALIDATION_ERROR',
+                            message: 'ユーザーIDは必須です',
+                            details: null
+                        }
+                    })
+                };
             }
             
             const isAvailable = await checkUserIdAvailability(userId);
-            
-            const responseData = {
-                success: true,
-                available: isAvailable,
-                message: isAvailable ? "利用可能です" : "既に使用されています"
-            };
-            
             return {
                 statusCode: 200,
-                headers: {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify(responseData)
+                body: JSON.stringify({
+                    success: true,
+                    data: {
+                        isAvailable
+                    }
+                })
             };
-            
-        } else if (event.httpMethod === 'POST') {
-            // ユーザー登録処理
-            let body;
-            try {
-                body = JSON.parse(event.body);
-            } catch (err) {
-                return ResponseService.validationError("Invalid JSON format");
-            }
-            
-            // 必須フィールドのバリデーション
-            const requiredFields = ['userId', 'email', 'password', 'name', 'nickname'];
-            const missingFields = requiredFields.filter(field => !body[field]);
-            
-            if (missingFields.length > 0) {
-                return ResponseService.validationError(`必須フィールドが不足しています: ${missingFields.join(', ')}`);
-            }
-            
-            // ユーザーID重複チェック
-            const isUserIdAvailable = await checkUserIdAvailability(body.userId);
-            if (!isUserIdAvailable) {
-                return ResponseService.validationError("ユーザーIDが既に存在します");
-            }
-            
-            // メールアドレス形式チェック
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(body.email)) {
-                return ResponseService.validationError("メールアドレスの形式が正しくありません");
-            }
-            
-            // パスワード長チェック
-            if (body.password.length < 6) {
-                return ResponseService.validationError("パスワードは6文字以上である必要があります");
-            }
-            
-            // ユーザー登録実行
-            const registeredUser = await registerUser(body);
-            
-            const responseData = {
-                success: true,
-                message: "登録が完了しました",
-                user: {
-                    userId: registeredUser.userId,
-                    nickname: registeredUser.nickname
-                }
-            };
-            
-            return {
-                statusCode: 200,
-                headers: {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify(responseData)
-            };
-            
-        } else {
-            return ResponseService.validationError("サポートされていないHTTPメソッドです");
         }
 
+        if (req.method === 'POST' && req.path === '/register') {
+            // 新規ユーザー登録処理
+            console.log('📝 Processing registration request with body:', req.body);
+            const userData = req.body.data || req.body;
+            
+            // バリデーション
+            const validationResult = ValidationService.validateUserRegistration(userData);
+            if (!validationResult.isValid) {
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'VALIDATION_ERROR',
+                            message: '入力データが不正です',
+                            details: validationResult.errors
+                        }
+                    })
+                };
+            }
+
+            // ユーザーID重複チェック
+            const isUserIdAvailable = await checkUserIdAvailability(userData.userId);
+            if (!isUserIdAvailable) {
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({
+                        success: false,
+                        error: {
+                            code: 'DUPLICATE_USER_ID',
+                            message: 'このユーザーIDは既に使用されています',
+                            details: null
+                        }
+                    })
+                };
+            }
+
+            // ユーザー登録
+            const user = await registerUser(userData);
+            
+            return {
+                statusCode: 200,
+                body: JSON.stringify({
+                    success: true,
+                    data: {
+                        user
+                    }
+                })
+            };
+        }
+
+        // 未対応のメソッド
+        return {
+            statusCode: 405,
+            body: JSON.stringify({
+                success: false,
+                error: {
+                    code: 'METHOD_NOT_ALLOWED',
+                    message: '未対応のメソッドです',
+                    details: null
+                }
+            })
+        };
+
     } catch (error) {
-        console.error('Register API処理エラー:', error);
-        return ResponseService.error("登録処理中にエラーが発生しました");
+        console.error('❌ Error in handler:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({
+                success: false,
+                error: {
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: 'サーバーエラーが発生しました',
+                    details: error.stack
+                }
+            })
+        };
     }
 }; 

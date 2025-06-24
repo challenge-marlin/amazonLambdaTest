@@ -18,13 +18,13 @@ class MatchModel extends BaseModel {
                 port: process.env.REDIS_PORT || 6379,
                 password: process.env.REDIS_PASSWORD || '',
                 db: 0,
-                connectTimeout: 10000,
-                lazyConnect: true,
+                connectTimeout: 30000,
+                lazyConnect: true,  // 遅延接続を有効化
                 retryDelayOnFailover: 100,
-                enableReadyCheck: false,
-                maxRetriesPerRequest: 3,
+                enableReadyCheck: true,
+                maxRetriesPerRequest: 5,
                 retryStrategy: (times) => {
-                    const delay = Math.min(times * 50, 2000);
+                    const delay = Math.min(times * 100, 3000);
                     console.log(`🔄 Redis再接続試行 ${times}: ${delay}ms後にリトライ`);
                     return delay;
                 },
@@ -46,13 +46,19 @@ class MatchModel extends BaseModel {
                 console.log('🔌 Redis接続が閉じられました');
             });
 
-            // 接続を確立
-            try {
-                await this.redis.connect();
-                console.log('✅ Redis接続確立完了');
-            } catch (error) {
-                console.error('❌ Redis接続確立失敗:', error.message);
-                throw error;
+            this.redis.on('ready', () => {
+                console.log('✅ Redis準備完了');
+            });
+
+            // 接続を確立（まだ接続されていない場合のみ）
+            if (this.redis.status !== 'ready' && this.redis.status !== 'connect') {
+                try {
+                    await this.redis.connect();
+                    console.log('✅ Redis接続確立完了');
+                } catch (error) {
+                    console.error('❌ Redis接続確立失敗:', error.message);
+                    throw error;
+                }
             }
         }
         return this.redis;
@@ -606,6 +612,47 @@ class MatchModel extends BaseModel {
 
         } catch (error) {
             console.error("マッチ強制終了エラー:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * マッチング開始
+     */
+    async startMatch(userId, matchType = "random") {
+        console.log('🎮 マッチング開始:', { userId, matchType });
+        try {
+            // 既存のアクティブなマッチをチェック
+            const existingMatchId = await this.findActiveMatchByUserId(userId);
+            console.log('🔍 既存マッチ確認:', existingMatchId);
+
+            if (existingMatchId) {
+                console.log('⚠️ 既存マッチ発見:', existingMatchId);
+                const existingMatch = await this.getMatchData(existingMatchId);
+                return { matchingId: existingMatchId, ...existingMatch };
+            }
+
+            // 待機中のマッチを検索
+            const waitingMatchId = await this.findWaitingMatch(userId);
+            console.log('🔍 待機中マッチ確認:', waitingMatchId);
+
+            if (waitingMatchId) {
+                console.log('✅ 待機中マッチに参加:', waitingMatchId);
+                // 既存マッチに参加
+                const matchData = await this.joinMatch(waitingMatchId, userId);
+                return { matchingId: waitingMatchId, ...matchData };
+            }
+
+            // 新規マッチを作成
+            const newMatchId = `match_${userId}_${Date.now()}`;
+            console.log('🆕 新規マッチ作成:', newMatchId);
+            
+            // マッチを初期化
+            const matchData = await this.initializeMatch(newMatchId, userId, matchType);
+            return { matchingId: newMatchId, ...matchData };
+
+        } catch (error) {
+            console.error('❌ マッチング開始エラー:', error);
             throw error;
         }
     }

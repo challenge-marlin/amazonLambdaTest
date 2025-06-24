@@ -1,10 +1,22 @@
 const BaseModel = require('./BaseModel');
+const crypto = require('crypto');
 
 class UserModel extends BaseModel {
+    /**
+     * パスワードのハッシュ化
+     */
+    hashPassword(password) {
+        return crypto.createHash('sha256').update(password).digest('hex');
+    }
+
     /**
      * ユーザー認証（ログイン）
      */
     async authenticateUser(userId, password) {
+        console.log('🔐 Authenticating user:', userId);
+        // 開発用：一時的にパスワードのハッシュ化をスキップ
+        // const hashedPassword = this.hashPassword(password);
+        
         const query = `
             SELECT 
                 u.user_id,
@@ -18,7 +30,10 @@ class UserModel extends BaseModel {
             LEFT JOIN user_stats us ON u.management_code = us.management_code
             WHERE u.user_id = ? AND u.password = ?
         `;
-        return await this.findOne(query, [userId, password]);
+        
+        const result = await this.findOne(query, [userId, password]);
+        console.log('🔐 Authentication result:', result ? 'Success' : 'Failed');
+        return result;
     }
 
     /**
@@ -95,16 +110,88 @@ class UserModel extends BaseModel {
     }
 
     /**
-     * 新規ユーザー作成
+     * 新規ユーザー作成（トランザクション使用）
      */
     async createUser(userData) {
-        // 必要に応じてパスワードのハッシュ化処理を追加
-        const dbData = {
-            ...userData,
-            created_at: new Date(),
-            updated_at: new Date()
-        };
-        return await this.create('users', dbData);
+        console.log('👤 Creating new user:', { ...userData, password: '[REDACTED]' });
+        
+        return await this.executeTransaction(async (connection) => {
+            // management_codeを生成
+            const managementCode = crypto.randomUUID();
+            console.log('👤 Generated management code:', managementCode);
+
+            // パスワードのハッシュ化
+            const hashedPassword = this.hashPassword(userData.password);
+            
+            // ユーザー情報を挿入
+            const userInsertQuery = `
+                INSERT INTO users (
+                    management_code, user_id, email, password, name, nickname,
+                    postal_code, address, phone_number, university, birthdate,
+                    profile_image_url, student_id_image_url, is_student_id_editable,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            `;
+            
+            const userInsertValues = [
+                managementCode,
+                userData.userId,
+                userData.email,
+                hashedPassword,
+                userData.name,
+                userData.nickname,
+                userData.postalCode || null,
+                userData.address || null,
+                userData.phoneNumber || null,
+                userData.university || null,
+                userData.birthdate || null,
+                userData.profileImageUrl || null,
+                userData.studentIdImageUrl || null,
+                false
+            ];
+
+            console.log('👤 Executing user insert:', {
+                query: userInsertQuery,
+                values: userInsertValues.map(v => v === hashedPassword ? '[REDACTED]' : v)
+            });
+
+            await connection.execute(userInsertQuery, userInsertValues);
+            
+            // ユーザー統計の初期データを挿入
+            const statsInsertQuery = `
+                INSERT INTO user_stats (
+                    management_code, total_wins, total_losses, total_draws,
+                    current_win_streak, max_win_streak, hand_stats_rock,
+                    hand_stats_scissors, hand_stats_paper, favorite_hand,
+                    recent_hand_results_str, daily_wins, daily_losses,
+                    daily_draws, title, available_titles, alias,
+                    show_title, show_alias, user_rank
+                ) VALUES (?, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 0, 0, 0, '初心者', '初心者', '', true, true, 'bronze')
+            `;
+
+            console.log('👤 Executing stats insert:', {
+                query: statsInsertQuery,
+                values: [managementCode]
+            });
+
+            await connection.execute(statsInsertQuery, [managementCode]);
+            
+            // 作成したユーザーの情報を取得
+            const [userRows] = await connection.execute(`
+                SELECT 
+                    u.user_id,
+                    u.nickname,
+                    u.profile_image_url,
+                    us.title,
+                    us.alias
+                FROM users u
+                LEFT JOIN user_stats us ON u.management_code = us.management_code
+                WHERE u.management_code = ?
+            `, [managementCode]);
+
+            console.log('👤 Created user data:', userRows[0]);
+            return userRows[0];
+        });
     }
 
     /**

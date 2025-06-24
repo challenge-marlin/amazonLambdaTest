@@ -1,26 +1,30 @@
 const mysql = require('mysql2/promise');
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    timezone: '+09:00',
+    charset: 'utf8mb4',
+    ssl: false,
+    supportBigNumbers: true,
+    bigNumberStrings: true,
+    dateStrings: false,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
 
 class BaseModel {
     constructor() {
-        this.dbConfig = {
-            host: process.env.DB_HOST,
-            user: process.env.DB_USER,
-            password: process.env.DB_PASSWORD,
-            database: process.env.DB_NAME,
-            timezone: '+09:00',
-            charset: 'utf8mb4',
-            ssl: false,
-            supportBigNumbers: true,
-            bigNumberStrings: true,
-            dateStrings: false
-        };
+        this.pool = pool;
     }
 
     /**
      * データベース接続を取得
      */
     async getConnection() {
-        const connection = await mysql.createConnection(this.dbConfig);
+        const connection = await this.pool.getConnection();
         
         // UTF-8エンコーディングを明示的に設定
         await connection.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -31,17 +35,38 @@ class BaseModel {
     }
 
     /**
-     * 安全なクエリ実行
+     * トランザクションを使用してクエリを実行
      */
-    async executeQuery(query, params = []) {
+    async executeTransaction(callback) {
         const connection = await this.getConnection();
         
         try {
-            const [rows] = await connection.execute(query, params);
-            return rows;
+            await connection.beginTransaction();
+            console.log('🔄 Transaction started');
+            
+            const result = await callback(connection);
+            
+            await connection.commit();
+            console.log('✅ Transaction committed');
+            
+            return result;
+        } catch (error) {
+            console.error('❌ Transaction error:', error);
+            await connection.rollback();
+            throw error;
         } finally {
-            await connection.end();
+            connection.release();
         }
+    }
+
+    /**
+     * 安全なクエリ実行
+     */
+    async executeQuery(query, params = []) {
+        console.log('📝 Executing query:', { query, params });
+        const [rows] = await this.pool.execute(query, params);
+        console.log('📝 Query result:', rows);
+        return rows;
     }
 
     /**
@@ -68,7 +93,10 @@ class BaseModel {
         const values = Object.values(data);
         
         const query = `INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`;
-        return await this.executeQuery(query, values);
+        console.log('📝 Creating record:', { tableName, fields });
+        const result = await this.executeQuery(query, values);
+        console.log('✅ Record created:', result);
+        return result;
     }
 
     /**
@@ -80,7 +108,10 @@ class BaseModel {
         const values = [...Object.values(data), ...whereParams];
         
         const query = `UPDATE ${tableName} SET ${setClause} WHERE ${whereClause}`;
-        return await this.executeQuery(query, values);
+        console.log('📝 Updating record:', { tableName, fields, whereClause });
+        const result = await this.executeQuery(query, values);
+        console.log('✅ Record updated:', result);
+        return result;
     }
 
     /**
@@ -88,7 +119,10 @@ class BaseModel {
      */
     async delete(tableName, whereClause, whereParams = []) {
         const query = `DELETE FROM ${tableName} WHERE ${whereClause}`;
-        return await this.executeQuery(query, whereParams);
+        console.log('📝 Deleting record:', { tableName, whereClause });
+        const result = await this.executeQuery(query, whereParams);
+        console.log('✅ Record deleted:', result);
+        return result;
     }
 }
 

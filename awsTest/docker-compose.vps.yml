@@ -30,6 +30,7 @@ services:
       MYSQL_DATABASE: jankendb
       MYSQL_USER: lambda_user
       MYSQL_PASSWORD: lambda_password
+      TZ: Asia/Tokyo
     volumes:
       - mysql_data:/var/lib/mysql
       - ./doc/sql/create_tables.sql:/docker-entrypoint-initdb.d/01_create_tables.sql:ro
@@ -39,7 +40,12 @@ services:
       - ./doc/sql/seed_match_history.sql:/docker-entrypoint-initdb.d/05_seed_match_history.sql:ro
     ports:
       - "3306:3306"
-    command: --default-authentication-plugin=mysql_native_password --wait_timeout=28800 --interactive_timeout=28800
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --wait_timeout=28800
+      --interactive_timeout=28800
     networks:
       - app-network
     restart: unless-stopped

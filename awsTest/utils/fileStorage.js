@@ -1,6 +1,7 @@
 const Minio = require('minio');
 const sharp = require('sharp');
 const crypto = require('crypto');
+const multer = require('multer');
 
 class ImageStorage {
     constructor() {
@@ -16,6 +17,14 @@ class ImageStorage {
             studentId: 'student-id-images'
         };
         this.initializeBuckets();
+        
+        // Multerの設定
+        this.upload = multer({
+            storage: multer.memoryStorage(),
+            limits: {
+                fileSize: 5 * 1024 * 1024 // 5MB制限
+            }
+        });
     }
 
     async initializeBuckets() {
@@ -141,6 +150,74 @@ class ImageStorage {
             throw error;
         }
     }
+
+    /**
+     * マルチパートフォームデータの解析
+     */
+    parseMultipartForm(req) {
+        return new Promise((resolve, reject) => {
+            console.log('📥 Starting multipart form parsing');
+            
+            this.upload.single('file')(req, {}, (err) => {
+                if (err) {
+                    console.error('❌ Error parsing multipart form:', err);
+                    return reject(err);
+                }
+
+                const fields = {};
+                const files = {};
+
+                // フィールドの処理
+                if (req.body) {
+                    Object.keys(req.body).forEach(key => {
+                        try {
+                            const value = req.body[key];
+                            const parsed = JSON.parse(value);
+                            if (parsed && typeof parsed === 'object') {
+                                if (parsed.data) {
+                                    Object.assign(fields, parsed.data);
+                                } else {
+                                    Object.assign(fields, parsed);
+                                }
+                            } else {
+                                fields[key] = value;
+                            }
+                        } catch (e) {
+                            fields[key] = req.body[key];
+                        }
+                    });
+                }
+
+                // ファイルの処理
+                if (req.file) {
+                    files.file = {
+                        fieldName: req.file.fieldname,
+                        originalFilename: req.file.originalname,
+                        path: req.file.path,
+                        headers: req.file.headers,
+                        size: req.file.size,
+                        buffer: req.file.buffer
+                    };
+                }
+
+                console.log('📥 Multipart form parsing completed');
+                resolve({ fields, files });
+            });
+        });
+    }
+
+    /**
+     * ファイルのアップロード
+     */
+    async uploadFile(file, type) {
+        const bucket = type === 'profile-images' ? this.buckets.profile : this.buckets.studentId;
+        const userId = crypto.randomUUID(); // 一時的なユーザーID
+        const uploadType = type === 'profile-images' ? 'profile' : 'studentId';
+        
+        const result = await this.uploadImage(userId, file, uploadType);
+        return result.url;
+    }
 }
 
-module.exports = new ImageStorage(); 
+// クラスを直接エクスポート
+module.exports = ImageStorage; 
